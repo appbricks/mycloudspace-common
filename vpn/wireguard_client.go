@@ -11,7 +11,6 @@ import (
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun"
-	"golang.zx2c4.com/wireguard/wgctrl"
 
 	log "github.com/sirupsen/logrus"
 
@@ -29,6 +28,7 @@ type wireguard struct {
 	device *device.Device
 
 	wgctrlService *WGCtrlService
+	wgctrlClient  *WGCtrlClient
 
 	errs         chan error
 	term         chan os.Signal
@@ -55,7 +55,6 @@ func (w *wireguard) Connect() error {
 		err error
 
 		tunIfaceName string
-		wgClient     *wgctrl.Client
 	)
 
 	logLevel := func() int {
@@ -99,6 +98,9 @@ func (w *wireguard) Connect() error {
 	if err = w.wgctrlService.Start(); err != nil {
 		return err
 	}
+	if w.wgctrlClient, err = NewWireguardCtrlClient(w.ifaceName); err != nil {
+		return err
+	}
 	
 	// handle termination of services
 	go func() {
@@ -137,13 +139,9 @@ func (w *wireguard) Connect() error {
 	signal.Notify(w.term, os.Interrupt)
 
 	// configure the wireguard tunnel
-	if wgClient, err = wgctrl.New(); err != nil {
+	if err = w.wgctrlClient.Configure(w.cfg.config); err != nil {
 		return err
 	}
-	if err = wgClient.ConfigureDevice(w.ifaceName, w.cfg.config); err != nil {
-		return err
-	}
-
 	return w.configureNetwork()
 }
 
@@ -161,14 +159,5 @@ func (w *wireguard) Disconnect() error {
 }
 
 func (w *wireguard) BytesTransmitted() (int64, int64, error) {
-
-	var (
-		err          error
-		wgctrlClient *WGCtrlClient
-	)
-	
-	if wgctrlClient, err = NewWireguardCtrlClient(w.ifaceName); err != nil {
-		return 0, 0, err
-	}
-	return wgctrlClient.BytesTransmitted()
+	return w.wgctrlClient.BytesTransmitted()
 }

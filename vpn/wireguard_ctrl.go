@@ -56,8 +56,8 @@ func (wgcs *WGCtrlService) Stop() error {
 }
 
 type WGCtrlClient struct {
-	wgClient *wgctrl.Client
-	device   *wgtypes.Device
+	ifaceName string
+	wgClient  *wgctrl.Client	
 }
 
 func NewWireguardCtrlClient(ifaceName string) (*WGCtrlClient, error) {
@@ -66,22 +66,32 @@ func NewWireguardCtrlClient(ifaceName string) (*WGCtrlClient, error) {
 		err error
 	)
 
-	wgcc := &WGCtrlClient{}
-	if wgcc.wgClient, err = wgctrl.New(); err != nil {
-		return nil, err
+	wgcc := &WGCtrlClient{
+		ifaceName: ifaceName,
 	}
-	if wgcc.device, err = wgcc.wgClient.Device(ifaceName); err != nil {
+	if wgcc.wgClient, err = wgctrl.New(); err != nil {
 		return nil, err
 	}
 	return wgcc, nil
 }
 
+func (wgcc *WGCtrlClient) Configure(cfg wgtypes.Config) error {
+	return wgcc.wgClient.ConfigureDevice(wgcc.ifaceName, cfg)
+}
+
 func (wgcc *WGCtrlClient) StatusText() (string, error) {
 
 	var (
+		err error
+
 		status strings.Builder
+		device *wgtypes.Device
 	)
 	
+	if device, err = wgcc.wgClient.Device(wgcc.ifaceName); err != nil {
+		return "", err
+	}
+
 	const deviceStatus = `interface: %s (%s)
   public key: %s
   private key: (hidden)
@@ -89,9 +99,9 @@ func (wgcc *WGCtrlClient) StatusText() (string, error) {
 	status.WriteString(
 		fmt.Sprintf(
 			deviceStatus,
-			wgcc.device.Name,
-			wgcc.device.Type.String(),
-			wgcc.device.PublicKey.String(),
+			device.Name,
+			device.Type.String(),
+			device.PublicKey.String(),
 		),
 	)
 
@@ -102,7 +112,7 @@ peer: %s
   latest handshake: %s
   transfer: %d B received, %d B sent
 `
-	for _, peer := range wgcc.device.Peers {
+	for _, peer := range device.Peers {
 		allowedIPs := make([]string, 0, len(peer.AllowedIPs))
 		for _, ip := range peer.AllowedIPs {
 			allowedIPs = append(allowedIPs, ip.String())
@@ -125,12 +135,19 @@ peer: %s
 func (wgcc *WGCtrlClient) BytesTransmitted() (int64, int64, error) {
 
 	var (
+		err error
+		
+		device     *wgtypes.Device
 		sent, recd int64
 	)
 	
+	if device, err = wgcc.wgClient.Device(wgcc.ifaceName); err != nil {
+		return -1, -1, err
+	}
+
 	recd = 0
 	sent = 0
-	for _, peer := range wgcc.device.Peers {
+	for _, peer := range device.Peers {
 		recd += peer.ReceiveBytes
 		sent += peer.TransmitBytes
 	}

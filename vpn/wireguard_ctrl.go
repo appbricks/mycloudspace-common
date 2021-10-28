@@ -79,6 +79,20 @@ func (wgcc *WGCtrlClient) Configure(cfg wgtypes.Config) error {
 	return wgcc.wgClient.ConfigureDevice(wgcc.ifaceName, cfg)
 }
 
+func (wgcc *WGCtrlClient) PublicKey() (string, error) {
+
+	var (
+		err error
+
+		device *wgtypes.Device
+	)
+	
+	if device, err = wgcc.wgClient.Device(wgcc.ifaceName); err != nil {
+		return "", err
+	}
+	return device.PublicKey.String(), nil
+}
+
 func (wgcc *WGCtrlClient) StatusText() (string, error) {
 
 	var (

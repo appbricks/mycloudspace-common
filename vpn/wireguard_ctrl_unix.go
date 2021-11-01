@@ -1,4 +1,5 @@
-// +build darwin
+//go:build linux || darwin
+// +build linux darwin
 
 package vpn
 

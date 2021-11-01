@@ -52,13 +52,14 @@ var _ = Describe("Wireguard Client", func() {
 				outputBuffer bytes.Buffer
 			)
 			
-			testTarget.httpTestSvrExpectedURI = "/~bastion-admin/mycs-test.conf"
+			testTarget.httpTestSvrExpectedURI = "/static/~bastion-admin/mycs-test.conf"
 			
 			// ensure target remotes status is loaded
 			err = testTarget.target.LoadRemoteRefs()
 			Expect(err).NotTo(HaveOccurred())
 
-			config, err = vpn.NewConfigFromTarget(testTarget.target, "bastion-admin", "")
+			config, err = vpn.NewConfigFromTarget(testTarget.target, 
+				vpn.NewStaticConfigData(testTarget.target, "bastion-admin", ""))
 			Expect(err).NotTo(HaveOccurred())
 			
 			tunIfaceName, err = network.GetNextAvailabeInterface("utun")
@@ -97,7 +98,7 @@ var _ = Describe("Wireguard Client", func() {
 			scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
 
 			var matchRoutes = func(line string) {
-				matched, _ := regexp.MatchString(fmt.Sprintf(`^0/1\s+192.168.111.1\s+UGSc\s+%s\s+$`, tunIfaceName), line)
+				matched, _ := regexp.MatchString(fmt.Sprintf(`^0/1\s+192.168.111.1\s+UGScg?\s+%s\s+$`, tunIfaceName), line)
 				if matched { counter++; return }
 				matched, _ = regexp.MatchString(`^34.204.21.102/32\s+([0-9]+\.?)+\s+UGSc\s+en[0-9]\s+$`, line)
 				if matched { counter++; return }

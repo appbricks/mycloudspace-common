@@ -40,13 +40,13 @@ var _ = Describe("Client", func() {
 		})
 
 		It("does not create a client if the target does not have the correct information", func() {
-			config, err = vpn.NewConfigFromTarget(tgt, "bastion-admin", "")
+			config, err = vpn.NewConfigFromTarget(tgt, vpn.NewStaticConfigData(tgt, "bastion-admin", ""))
 			Expect(err).To(HaveOccurred())
 			Expect(config).To(BeNil())
 			Expect(err.Error()).To(Equal("target \"fakeRecipe/fakeIAAS/\" is not a bastion node"))
 
 			tgt.Recipe.(*cookbook_mocks.FakeRecipe).SetBastion()
-			config, err = vpn.NewConfigFromTarget(tgt, "bastion-admin", "")
+			config, err = vpn.NewConfigFromTarget(tgt, vpn.NewStaticConfigData(tgt, "bastion-admin", ""))
 			Expect(err).To(HaveOccurred())
 			Expect(config).To(BeNil())
 			Expect(err.Error()).To(Equal("target vpn type \"\" is not supported"))

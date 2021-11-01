@@ -2,14 +2,12 @@ package vpn
 
 import (
 	"fmt"
-
-	"github.com/appbricks/cloud-builder/target"
 )
 
 type openvpnConfig struct {	
 }
 
-func newOpenVPNConfigFromTarget(tgt *target.Target, user, passwd string) (*openvpnConfig, error) {
+func newOpenVPNConfigFromTarget(configData ConfigData) (*openvpnConfig, error) {
 	return &openvpnConfig{}, fmt.Errorf("openvpn client connect is not supported")
 }
 

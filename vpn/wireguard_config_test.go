@@ -47,13 +47,14 @@ var _ = Describe("Wireguard Config", func() {
 		})
 
 		It("load wireguard vpn config to connect to a target", func() {
-			testTarget.httpTestSvrExpectedURI = "/~bastion-admin/mycs-test.conf"
+			testTarget.httpTestSvrExpectedURI = "/static/~bastion-admin/mycs-test.conf"
 
 			// ensure target remotes status is loaded
 			err = testTarget.target.LoadRemoteRefs()
 			Expect(err).NotTo(HaveOccurred())
 
-			config, err = vpn.NewConfigFromTarget(testTarget.target, "bastion-admin", "")
+			config, err = vpn.NewConfigFromTarget(testTarget.target, 
+				vpn.NewStaticConfigData(testTarget.target, "bastion-admin", ""))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).ToNot(BeNil())
 			Expect(reflect.TypeOf(config).String()).To(Equal("*vpn.wireguardConfig"))		
@@ -62,7 +63,7 @@ var _ = Describe("Wireguard Config", func() {
 			
 			desc, err := config.Save(downloadPath)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(desc).To(MatchRegexp(fmt.Sprintf(wireguardConfigSave, downloadPath)))
+			Expect(desc[0:400]).To(MatchRegexp(fmt.Sprintf(wireguardConfigSave, downloadPath)))
 		})
 	})
 })
@@ -246,7 +247,7 @@ Endpoint = 34.204.21.102:3399
 PersistentKeepalive = 25
 `
 const wireguardConfigSave = `The VPN configuration has been downloaded to the file shown below.
-You need import it to the wireguard client via the option "Import
+You need import it to the wireguard vpn client via the option "Import
 Tunnels from file...".
 
 %s/mycs-test.conf

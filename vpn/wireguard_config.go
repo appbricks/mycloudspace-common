@@ -14,8 +14,6 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-
-	"github.com/appbricks/cloud-builder/target"
 )
 
 type wireguardConfig struct {	
@@ -33,7 +31,7 @@ type wireguardConfig struct {
 var configSectionPattern = regexp.MustCompile(`\[(.*)\]`)
 var configAttribPattern = regexp.MustCompile(`(^[a-zA-Z0-9\-\_]*)\s*=\s*(.*)`)
 
-func newWireguardConfigFromTarget(tgt *target.Target, user, passwd string) (*wireguardConfig, error) {
+func newWireguardConfigFromTarget(configData ConfigData) (*wireguardConfig, error) {
 
 	var (
 		err error	
@@ -51,9 +49,12 @@ func newWireguardConfigFromTarget(tgt *target.Target, user, passwd string) (*wir
 
 	peerConfig = wgtypes.PeerConfig{}
 
-	if c.configFileName, c.configData, err = getVPNConfig(tgt, user, passwd); err != nil {
+	if err = configData.Read(); err != nil {
 		return nil, err
 	}
+	c.configData = configData.Data()
+	c.configFileName = configData.Name()
+	
 	scanner := bufio.NewScanner(bytes.NewReader(c.configData))
 	for scanner.Scan() {
 		line = scanner.Text()

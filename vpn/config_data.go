@@ -15,8 +15,9 @@ type vpnConfig struct {
 	
 	user, passwd string
 
-	data []byte
-	name string
+	name    string
+	vpnType string
+	data    []byte
 }
 
 func NewStaticConfigData(tgt *target.Target, user, passwd string) *vpnConfig {
@@ -40,8 +41,7 @@ func (c *vpnConfig) Read() error {
 
 		output terraform.Output
 		
-		vpcName,
-		configFileName string
+		vpcName string
 
 		client *http.Client
 		url    string
@@ -51,10 +51,13 @@ func (c *vpnConfig) Read() error {
 		resBody []byte
 	)
 
-	if c.tgt. Status() != target.Running {
+	// validate target bastion
+	if !c.tgt.Recipe.IsBastion() {
+		return fmt.Errorf(fmt.Sprintf("target \"%s\" is not a bastion node", c.tgt.Key()))
+	}
+	if c.tgt.Status() != target.Running {
 		return fmt.Errorf("target is not running")
 	}
-
 	instance = c.tgt. ManagedInstance("bastion")
 	if instance == nil {
 		return fmt.Errorf("unable to find a bastion instance to connect to")
@@ -69,20 +72,29 @@ func (c *vpnConfig) Read() error {
 		return err
 	}
 
+	// get a name for the space vpn
 	if output, ok = (*c.tgt. Output)["cb_vpc_name"]; !ok {
 		return fmt.Errorf("the vpc name was not present in the sandbox build output")
 	}
 	if vpcName, ok = output.Value.(string); !ok {
-		return fmt.Errorf("the vpc name retrieved from the build output was not of the correct type")
+		return fmt.Errorf("target's \"cb_vpc_name\" output was not a string %#v", output)
 	}
-	configFileName = fmt.Sprintf(
+	c.name = fmt.Sprintf(
 		"%s.conf",
 		vpcName,
 	)
 	url = fmt.Sprintf(
 		"%s/static/~%s/%s",
-		url, c.user, configFileName,
+		url, c.user, c.name,
 	)
+
+	// get the vpn type
+	if output, ok = (*c.tgt.Output)["cb_vpn_type"]; !ok {
+		return fmt.Errorf("the vpn type was not present in the sandbox build output")
+	}
+	if c.vpnType, ok = output.Value.(string); !ok {
+		return fmt.Errorf("target's \"cb_vpn_type\" output was not a string: %#v", output)
+	}
 
 	if req, err = http.NewRequest("GET", url, nil); err != nil {
 		return err
@@ -101,14 +113,17 @@ func (c *vpnConfig) Read() error {
 	}
 
 	c.data = resBody
-	c.name = configFileName
 	return nil
-}
-
-func (c *vpnConfig) Data() []byte {	
-	return c.data
 }
 
 func (c *vpnConfig) Name() string {	
 	return c.name
+}
+
+func (c *vpnConfig) VpnType() string {	
+	return c.vpnType
+}
+
+func (c *vpnConfig) Data() []byte {	
+	return c.data
 }

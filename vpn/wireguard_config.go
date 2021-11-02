@@ -49,9 +49,6 @@ func newWireguardConfigFromTarget(configData ConfigData) (*wireguardConfig, erro
 
 	peerConfig = wgtypes.PeerConfig{}
 
-	if err = configData.Read(); err != nil {
-		return nil, err
-	}
 	c.configData = configData.Data()
 	c.configFileName = configData.Name()
 	

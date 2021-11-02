@@ -22,7 +22,7 @@ type ConfigData interface {
 	Read() error
 
 	Name() string
-	VpnType() string
+	VPNType() string
 	Data() []byte
 }
 
@@ -32,7 +32,7 @@ func NewConfigFromTarget(configData ConfigData) (Config, error) {
 	if err := configData.Read(); err != nil {
 		return nil, err
 	}
-	vpnType := configData.VpnType()
+	vpnType := configData.VPNType()
 
 	switch vpnType {
 	case "wireguard":

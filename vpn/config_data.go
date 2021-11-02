@@ -120,7 +120,7 @@ func (c *vpnConfig) Name() string {
 	return c.name
 }
 
-func (c *vpnConfig) VpnType() string {	
+func (c *vpnConfig) VPNType() string {	
 	return c.vpnType
 }
 

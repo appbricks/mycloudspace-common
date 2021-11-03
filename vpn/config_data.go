@@ -111,3 +111,7 @@ func (c *vpnConfig) VPNType() string {
 func (c *vpnConfig) Data() []byte {	
 	return c.data
 }
+
+func (c *vpnConfig) Delete() error {
+	return nil
+}

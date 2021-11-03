@@ -22,6 +22,7 @@ type ConfigData interface {
 	Name() string
 	VPNType() string
 	Data() []byte
+	Delete() error
 }
 
 // load vpn config for the space target's admin user

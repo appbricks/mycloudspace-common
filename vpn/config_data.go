@@ -66,12 +66,9 @@ func NewStaticConfigData(tgt *target.Target, user, passwd string) (*vpnConfig, e
 	if vpcName, ok = output.Value.(string); !ok {
 		return nil, fmt.Errorf("target's \"cb_vpc_name\" output was not a string %#v", output)
 	}
-	c.name = fmt.Sprintf(
-		"%s.conf",
-		vpcName,
-	)
+	c.name = vpcName
 	url = fmt.Sprintf(
-		"%s/static/~%s/%s",
+		"%s/static/~%s/%s.conf",
 		url, user, c.name,
 	)
 

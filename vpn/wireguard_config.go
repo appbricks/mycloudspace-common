@@ -50,7 +50,7 @@ func newWireguardConfigFromTarget(configData ConfigData) (*wireguardConfig, erro
 	peerConfig = wgtypes.PeerConfig{}
 
 	c.configData = configData.Data()
-	c.configFileName = configData.Name()
+	c.configFileName = fmt.Sprintf("%s.conf", configData.Name())
 	
 	scanner := bufio.NewScanner(bytes.NewReader(c.configData))
 	for scanner.Scan() {

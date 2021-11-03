@@ -28,7 +28,12 @@ var _ = Describe("Client", func() {
 			cli := utils_mocks.NewFakeCLI(&outputBuffer, &errorBuffer)			
 			tgt = cookbook_mocks.NewMockTarget(cli, "1.1.1.1", 9999, "")
 
+			// ensure target remotes status is loaded
+			err := tgt.LoadRemoteRefs()
+			Expect(err).NotTo(HaveOccurred())
+
 			output := make(map[string]terraform.Output)
+			output["cb_vpc_name"] = terraform.Output{Value: "mycs-test"}
 			tgt.Output = &output
 		})
 
@@ -36,7 +41,7 @@ var _ = Describe("Client", func() {
 			configData, err := vpn.NewStaticConfigData(tgt, "bastion-admin", "")
 			Expect(err).To(HaveOccurred())
 			Expect(configData).To(BeNil())
-			Expect(err.Error()).To(Equal("target \"fakeRecipe/fakeIAAS/\" is not a bastion node"))
+			Expect(err.Error()).To(Equal("the vpn type was not present in the sandbox build output"))
 		})
 	})
 })

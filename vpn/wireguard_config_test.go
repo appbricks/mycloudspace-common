@@ -53,7 +53,9 @@ var _ = Describe("Wireguard Config", func() {
 			err = testTarget.target.LoadRemoteRefs()
 			Expect(err).NotTo(HaveOccurred())
 
-			config, err = vpn.NewConfigFromTarget(vpn.NewStaticConfigData(testTarget.target, "bastion-admin", ""))
+			configData, err := vpn.NewStaticConfigData(testTarget.target, "bastion-admin", "")
+			Expect(err).NotTo(HaveOccurred())
+			config, err = vpn.NewConfigFromTarget(configData)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).ToNot(BeNil())
 			Expect(reflect.TypeOf(config).String()).To(Equal("*vpn.wireguardConfig"))		

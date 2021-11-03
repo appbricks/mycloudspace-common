@@ -19,8 +19,6 @@ type Client interface {
 }
 
 type ConfigData interface {	
-	Read() error
-
 	Name() string
 	VPNType() string
 	Data() []byte
@@ -28,12 +26,7 @@ type ConfigData interface {
 
 // load vpn config for the space target's admin user
 func NewConfigFromTarget(configData ConfigData) (Config, error) {
-
-	if err := configData.Read(); err != nil {
-		return nil, err
-	}
 	vpnType := configData.VPNType()
-
 	switch vpnType {
 	case "wireguard":
 		return newWireguardConfigFromTarget(configData)

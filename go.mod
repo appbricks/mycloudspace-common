@@ -38,7 +38,7 @@ require (
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/gin-gonic/gin v1.7.4 // indirect
 	github.com/go-multierror/multierror v1.0.2
-	github.com/go-ole/go-ole v1.2.5 // indirect
+	github.com/go-ole/go-ole v1.2.6-0.20210915003542-8b1f7f90f6b1 // indirect
 	github.com/go-playground/locales v0.13.0 // indirect
 	github.com/go-playground/universal-translator v0.17.0 // indirect
 	github.com/go-playground/validator/v10 v10.4.1 // indirect
@@ -128,7 +128,7 @@ require (
 	golang.org/x/time v0.0.0-20210611083556-38a9dc6acbc6 // indirect
 	golang.org/x/tools v0.1.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	golang.zx2c4.com/wireguard v0.0.0-20210927201915-bb745b2ea326
+	golang.zx2c4.com/wireguard v0.0.0-20211012062646-82d2aa87aa62
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20211011172912-d63ac011b8cf
 	golang.zx2c4.com/wireguard/windows v0.4.10 // indirect
 	google.golang.org/api v0.30.0 // indirect
@@ -144,4 +144,17 @@ require (
 	inet.af/netstack v0.0.0-20210622165351-29b14ebc044e // indirect
 	inet.af/peercred v0.0.0-20210318190834-4259e17bb763 // indirect
 	tailscale.com v0.0.0-00010101000000-000000000000
+)
+
+require (
+	github.com/aws/aws-sdk-go-v2 v1.9.2 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.8.3 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.4.3 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.6.0 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.2.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.3.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.12.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.4.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.7.2 // indirect
+	github.com/aws/smithy-go v1.8.0 // indirect
 )

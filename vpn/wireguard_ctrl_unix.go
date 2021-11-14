@@ -22,25 +22,26 @@ func (wgcs *WGCtrlService) startUAPI() error {
 
 	// open UAPI file
 	if fileUAPI, err = ipc.UAPIOpen(wgcs.ifaceName); err != nil {
-		logger.DebugMessage("UAPI listen error: %s", err.Error())
+		logger.ErrorMessage("WGCtrlService.startUAPI(): UAPI listen error: %s", err.Error())
 		return err
 	}
 	// listen for UAPI IPC
 	if wgcs.uapi, err = ipc.UAPIListen(wgcs.ifaceName, fileUAPI); err != nil {
-		wgcs.deviceLogger.Errorf("Failed to listen on UAPI socket: %v", err)
+		logger.ErrorMessage("WGCtrlService.startUAPI(): Failed to listen on UAPI socket: %v", err)
 		return err
 	}
-	wgcs.deviceLogger.Verbosef("UAPI listener started")
+	logger.DebugMessage("WGCtrlService.startUAPI(): UAPI listener started")
 
 	// listen for control data on UAPI IPC socket
 	go func() {		
 		for {
 			conn, err := wgcs.uapi.Accept()
 			if err != nil {
-				wgcs.deviceLogger.Verbosef("UAPI listener stopped")
+				logger.DebugMessage("WGCtrlService.startUAPI(): UAPI listener stopped")
 				if err == unix.EBADF {
 					wgcs.err<-nil
 				} else {
+					logger.ErrorMessage("WGCtrlService.startUAPI(): UAPI error when stopped: %s", err.Error())
 					wgcs.err<-err
 				}
 				return

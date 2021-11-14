@@ -78,7 +78,7 @@ func (w *wireguard) Connect() error {
 	}	
 	// open TUN device on utun#
 	if w.tunnel, err = tun.CreateTUN(w.ifaceName, device.DefaultMTU); err != nil {
-		logger.DebugMessage("Failed to create TUN device: %s", err.Error())
+		logger.ErrorMessage("wireguard.Connect(): Failed to create TUN device: %s", err.Error())
 		return err
 	}
 	if tunIfaceName, err = w.tunnel.Name(); err == nil {
@@ -125,12 +125,12 @@ func (w *wireguard) Connect() error {
 
 		w.cleanupNetwork(false)
 		if err = w.wgctrlService.Stop(); err != nil {
-			logger.DebugMessage("Error closing UAPI socket: %s", err.Error())
+			logger.ErrorMessage("wireguard.Connect(): Error closing UAPI socket: %s", err.Error())
 		}
 		if err = w.tunnel.Close(); err != nil {
-			logger.DebugMessage("Error closing TUN device: %s", err.Error())
+			logger.ErrorMessage("wireguard.Connect(): Error closing TUN device: %s", err.Error())
 		}
-		logger.DebugMessage("Wireguard client has been disconnected.")
+		logger.DebugMessage("wireguard.Connect(): Wireguard client has been disconnected.")
 	}()
 
 	// send termination signals to the term channel 
@@ -150,8 +150,8 @@ func (w *wireguard) Disconnect() error {
 	select {
 		case <-w.disconnected:		
 		case <-time.After(time.Millisecond * 100):
-			logger.DebugMessage(
-				"Timed out waiting for VPN disconnect signal. Most likely connection was not established.",
+			logger.WarnMessage(
+				"wireguard.Disconnect(): Timed out waiting for VPN disconnect signal. Most likely connection was not established.",
 			)
 			w.cleanupNetwork(false)
 	}

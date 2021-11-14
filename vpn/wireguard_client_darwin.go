@@ -1,3 +1,4 @@
+//go:build darwin
 // +build darwin
 
 package vpn
@@ -185,17 +186,17 @@ func (w *wireguard) cleanupNetwork(resetDefault bool) {
 	if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, null, null); err == nil {
 		// delete DNS 
 		if err = networksetup.Run([]string{ "-setdnsservers", w.sysDevName, "Empty" }); err != nil {
-			logger.DebugMessage("ERROR deleting DNS from network service %s: %s", w.sysDevName, err.Error())
+			logger.ErrorMessage("wireguard.cleanupNetwork(): deleting DNS from network service %s: %s", w.sysDevName, err.Error())
 		}
 	} else {
-		logger.DebugMessage("ERROR creating /usr/sbin/networksetup runner: %s", err.Error())
+		logger.ErrorMessage("wireguard.cleanupNetwork(): creating /usr/sbin/networksetup runner: %s", err.Error())
 	}
 
 	if route, err = run.NewCLI("/sbin/route", home, null, null); err == nil {
 		// delete external routes to peer endpoints
 		for _, peerExtAddress := range w.cfg.peerAddresses {
 			if err = route.Run([]string{ "delete", "-inet", "-net", peerExtAddress }); err != nil {
-				logger.DebugMessage("ERROR deleting route to %s: %s", peerExtAddress, err.Error())
+				logger.ErrorMessage("wireguard.cleanupNetwork(): deleting route to %s: %s", peerExtAddress, err.Error())
 			}
 		}
 
@@ -205,6 +206,6 @@ func (w *wireguard) cleanupNetwork(resetDefault bool) {
 		}
 
 	} else {
-		logger.DebugMessage("ERROR creating /sbin/route CLI runner: %s", err.Error())
+		logger.ErrorMessage("wireguard.cleanupNetwork(): creating /sbin/route CLI runner: %s", err.Error())
 	}
 }

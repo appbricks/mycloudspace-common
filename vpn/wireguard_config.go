@@ -23,7 +23,8 @@ type wireguardConfig struct {
 	tunAddress,
 	tunDNS string
 
-	peerAddresses []string
+	peerAddresses  []string
+	isDefaultRoute bool
 	
 	config wgtypes.Config
 }
@@ -109,6 +110,14 @@ func newWireguardConfigFromTarget(configData ConfigData) (*wireguardConfig, erro
 						var ipNet *net.IPNet
 						ips := strings.Split(value, ",")
 						for _, ip := range ips {
+							if !c.isDefaultRoute && ip == "0.0.0.0/0" {
+								// set this tunnel as handling all network traffic that
+								// does not have an explicit routing rule. i.e. all 
+								// network traffic is tunneled via this wireguard tunnel.
+								// wireguard internally routes traffic to the correct
+								// peer
+								c.isDefaultRoute = true
+							}
 							if _, ipNet, err = net.ParseCIDR(ip); err != nil {
 								return nil, err
 							}

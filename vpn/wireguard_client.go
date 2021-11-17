@@ -21,6 +21,7 @@ import (
 type wireguard struct {	
 
 	cfg *wireguardConfig
+	nc  network.NetworkContext
 
 	ifaceName string
 
@@ -34,14 +35,24 @@ type wireguard struct {
 	term         chan os.Signal
 	disconnected chan bool
 
-	sysDevName string
-
 	err error
 }
 
 func newWireguardClient(cfg *wireguardConfig) (*wireguard, error) {
+
+	var (
+		err error
+
+		nc network.NetworkContext
+	)
+
+	if nc, err = network.NewNetworkContext(); err != nil {
+		return nil, err
+	}
+
 	return &wireguard{
 		cfg: cfg,
+		nc:  nc,
 
 		errs:         make(chan error),
 		term:         make(chan os.Signal, 1),
@@ -55,6 +66,9 @@ func (w *wireguard) Connect() error {
 		err error
 
 		tunIfaceName string
+		dnsManager   network.DNSManager
+		routeManager network.RouteManager
+		tunRoute     network.RoutableInterface
 	)
 
 	logLevel := func() int {
@@ -123,13 +137,15 @@ func (w *wireguard) Connect() error {
 		}		
 		deviceLogger.Verbosef("Shutting down wireguard tunnel")
 
-		w.cleanupNetwork(false)
 		if err = w.wgctrlService.Stop(); err != nil {
 			logger.ErrorMessage("wireguard.Connect(): Error closing UAPI socket: %s", err.Error())
 		}
 		if err = w.tunnel.Close(); err != nil {
 			logger.ErrorMessage("wireguard.Connect(): Error closing TUN device: %s", err.Error())
 		}
+		// cleanup dns and routing
+		w.nc.Clear()
+
 		logger.DebugMessage("wireguard.Connect(): Wireguard client has been disconnected.")
 	}()
 
@@ -142,18 +158,42 @@ func (w *wireguard) Connect() error {
 	if err = w.wgctrlClient.Configure(w.cfg.config); err != nil {
 		return err
 	}
-	return w.configureNetwork()
+	// configure dns
+	if dnsManager, err = w.nc.NewDNSManager(); err != nil {
+		return err
+	}
+	if err = dnsManager.AddDNSServers([]string{ w.cfg.tunDNS }); err != nil {
+		return err
+	}
+	// configure routing
+	if routeManager, err = w.nc.NewRouteManager(); err != nil {
+		return err
+	}
+	if err = routeManager.AddExternalRouteToIPs(w.cfg.peerAddresses); err != nil {
+		return err
+	}
+	if tunRoute, err = routeManager.NewRoutableInterface(w.ifaceName, w.cfg.tunAddress); err != nil {
+		return err
+	}
+	if w.cfg.isDefaultRoute {
+		if err = tunRoute.MakeDefaultRoute(); err != nil {
+			return err
+		}	
+	}
+
+	return nil
 }
 
 func (w *wireguard) Disconnect() error {
 	w.term<-os.Interrupt
 	select {
 		case <-w.disconnected:		
-		case <-time.After(time.Millisecond * 100):
+		case <-time.After(time.Millisecond * 500):
 			logger.WarnMessage(
 				"wireguard.Disconnect(): Timed out waiting for VPN disconnect signal. Most likely connection was not established.",
 			)
-			w.cleanupNetwork(false)
+			// cleanup dns and routing
+			w.nc.Clear()
 	}
 	return nil
 }

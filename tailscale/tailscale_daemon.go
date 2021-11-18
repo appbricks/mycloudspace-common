@@ -3,6 +3,7 @@ package tailscale
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-multierror/multierror"
+	"github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
 	"golang.zx2c4.com/wireguard/device"
 	"tailscale.com/ipn"
@@ -27,7 +29,9 @@ import (
 	"tailscale.com/net/socks5/tssocks"
 	"tailscale.com/net/tstun"
 	"tailscale.com/paths"
+	"tailscale.com/safesocket"
 	"tailscale.com/types/logger"
+	"tailscale.com/util/clientmetric"
 	"tailscale.com/version/distro"
 	"tailscale.com/wgengine"
 	"tailscale.com/wgengine/monitor"
@@ -52,8 +56,9 @@ type TailscaleDaemon struct {
 	port           uint16
 	statePath      string
 	socketPath     string
-	birdSocketPath string
+	birdSocketPath string	
 	socksAddr      string
+	httpProxyAddr  string
 
 	// log verbosity level; 0 is default, 1 or higher are increasingly verbose
 	verbose int
@@ -199,19 +204,8 @@ func (tsd *TailscaleDaemon) run() error {
 	}
 	pol.Logtail.SetLinkMonitor(linkMon)
 
-	var socksListener net.Listener
-	if tsd.socksAddr != "" {
-		var err error
-		socksListener, err = net.Listen("tcp", tsd.socksAddr)
-		if err != nil {
-			log.Fatalf("SOCKS5 listener: %v", err)
-		}
-		if strings.HasSuffix(tsd.socksAddr, ":0") {
-			// Log kernel-selected port number so integration tests
-			// can find it portably.
-			log.Printf("SOCKS5 listening on %v", socksListener.Addr())
-		}
-	}
+	socksListener := mustStartTCPListener("SOCKS5", tsd.socksAddr)
+	httpProxyListener := mustStartTCPListener("HTTP proxy", tsd.httpProxyAddr)
 
 	e, useNetstack, err := tsd.createEngine(logf, linkMon)
 	if err != nil {
@@ -219,31 +213,63 @@ func (tsd *TailscaleDaemon) run() error {
 		return err
 	}
 
-	var ns *netstack.Impl
-	if useNetstack || wrapNetstack {
-		onlySubnets := wrapNetstack && !useNetstack
-		ns = mustStartNetstack(logf, e, onlySubnets)
+	ns, err := newNetstack(logf, e)
+	if err != nil {
+		return fmt.Errorf("newNetstack: %w", err)
+	}
+	ns.ProcessLocalIPs = useNetstack
+	ns.ProcessSubnets = useNetstack || wrapNetstack
+	if err := ns.Start(); err != nil {
+		log.Fatalf("failed to start netstack: %v", err)
 	}
 
-	if socksListener != nil {
+	if socksListener != nil || httpProxyListener != nil {
 		srv := tssocks.NewServer(logger.WithPrefix(logf, "socks5: "), e, ns)
-		go func() {
-			log.Fatalf("SOCKS5 server exited: %v", srv.Serve(socksListener))
-		}()
+		if httpProxyListener != nil {
+			hs := &http.Server{Handler: httpProxyHandler(srv.Dialer)}
+			go func() {
+				log.Fatalf("HTTP proxy exited: %v", hs.Serve(httpProxyListener))
+			}()
+		}
+		if socksListener != nil {
+			go func() {
+				log.Fatalf("SOCKS5 server exited: %v", srv.Serve(socksListener))
+			}()
+		}
 	}
 
 	e = wgengine.NewWatchdog(e)
 	ctx, tsd.cancel = context.WithCancel(context.Background())
 
+	opts := tsd.ipnServerOpts()
+
+	store, err := ipnserver.StateStore(tsd.socketPath, logf)
+	if err != nil {
+		return err
+	}
+	srv, err := ipnserver.New(logf, pol.PublicID.String(), store, e, nil, opts)
+	if err != nil {
+		logf("ipnserver.New: %v", err)
+		return err
+	}
+
+	if debugMux != nil {
+		debugMux.HandleFunc("/debug/ipn", srv.ServeHTMLStatus)
+	}
+
+	ln, _, err := safesocket.Listen(tsd.socketPath, safesocket.WindowsLocalPort)
+	if err != nil {
+		return fmt.Errorf("safesocket.Listen: %v", err)
+	}
+
 	tsd.exit.Add(1)
 	go func() {
-		opts := tsd.ipnServerOpts()
-		opts.DebugMux = debugMux
-		err := ipnserver.Run(ctx, logf, pol.PublicID.String(), ipnserver.FixedEngine(e), opts)
+		err = srv.Run(ctx, ln)
 		// Cancelation is not an error: it is the only way to stop ipnserver.
 		if err != nil && err != context.Canceled {
 			logf("ipnserver.Run: %v", err)
 		}
+	
 		cb_logger.TraceMessage("TailscaleDaemon.run(): Tailscale daemon services stopped")
 		tsd.exit.Done()
 	}()
@@ -251,7 +277,7 @@ func (tsd *TailscaleDaemon) run() error {
 	return nil
 }
 
-func  (tsd *TailscaleDaemon) ipnServerOpts() (o ipnserver.Options) {
+func (tsd *TailscaleDaemon) ipnServerOpts() (o ipnserver.Options) {
 	// Allow changing the OS-specific IPN behavior for tests
 	// so we can e.g. test Windows-specific behaviors on Linux.
 	goos := os.Getenv("TS_DEBUG_TAILSCALED_IPN_GOOS")
@@ -259,9 +285,14 @@ func  (tsd *TailscaleDaemon) ipnServerOpts() (o ipnserver.Options) {
 		goos = runtime.GOOS
 	}
 
-	o.Port = 41112
-	o.StatePath = tsd.statePath
-	o.SocketPath = tsd.socketPath // even for goos=="windows", for tests
+	o.VarRoot = tsd.statePath
+
+	// If an absolute --state is provided try to derive
+	// a state directory.
+	if o.VarRoot == "" {
+		home, _ := homedir.Dir()
+		o.VarRoot = filepath.Join(home, ".tailscale")
+	}
 
 	switch goos {
 	default:
@@ -369,12 +400,18 @@ func shouldWrapNetstack() bool {
 
 func newDebugMux() *http.ServeMux {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/metrics", servePrometheusMetrics)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	return mux
+}
+
+func servePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	clientmetric.WritePrometheusExpositionFormat(w)
 }
 
 func runDebugServer(mux *http.ServeMux, addr string) {
@@ -387,17 +424,26 @@ func runDebugServer(mux *http.ServeMux, addr string) {
 	}
 }
 
-func mustStartNetstack(logf logger.Logf, e wgengine.Engine, onlySubnets bool) *netstack.Impl {
+func newNetstack(logf logger.Logf, e wgengine.Engine) (*netstack.Impl, error) {
 	tunDev, magicConn, ok := e.(wgengine.InternalsGetter).GetInternals()
 	if !ok {
-		log.Fatalf("%T is not a wgengine.InternalsGetter", e)
+		return nil, fmt.Errorf("%T is not a wgengine.InternalsGetter", e)
 	}
-	ns, err := netstack.Create(logf, tunDev, e, magicConn, onlySubnets)
+	return netstack.Create(logf, tunDev, e, magicConn)
+}
+
+func mustStartTCPListener(name, addr string) net.Listener {
+	if addr == "" {
+		return nil
+	}
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("netstack.Create: %v", err)
+		log.Fatalf("%v listener: %v", name, err)
 	}
-	if err := ns.Start(); err != nil {
-		log.Fatalf("failed to start netstack: %v", err)
+	if strings.HasSuffix(addr, ":0") {
+		// Log kernel-selected port number so integration tests
+		// can find it portably.
+		log.Printf("%v listening on %v", name, ln.Addr())
 	}
-	return ns
+	return ln
 }

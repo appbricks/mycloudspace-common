@@ -107,7 +107,7 @@ func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 		// select
 		port: 0,
 		// "path of state file
-		statePath: filepath.Join(statePath, "tailscaled.state"),
+		statePath: statePath,
 		// path of the service unix socket
 		socketPath: paths.DefaultTailscaledSocket(),
 		// path of the bird unix socket
@@ -189,7 +189,7 @@ func (tsd *TailscaleDaemon) run() error {
 	logf = logger.RateLimitedFn(logf, 5*time.Second, 5, 100)
 
 	if tsd.statePath == "" {
-		log.Fatalf("--state is required")
+		log.Fatalf("state path is required")
 	}
 
 	var debugMux *http.ServeMux
@@ -243,7 +243,7 @@ func (tsd *TailscaleDaemon) run() error {
 
 	opts := tsd.ipnServerOpts()
 
-	store, err := ipnserver.StateStore(tsd.socketPath, logf)
+	store, err := ipnserver.StateStore(filepath.Join(tsd.statePath, "tailscaled.state"), logf)
 	if err != nil {
 		return err
 	}

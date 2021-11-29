@@ -10,7 +10,8 @@ type CreateMeshAuthKeyResp struct {
 	DeviceNodes  []TSNode `json:"device_nodes,omitempty"`
 }
 type TSNode struct {
-	Name   string   `json:"name,omitempty"`
-	IP     string   `json:"ip,omitempty"`
-	Routes []string `json:"routes,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	IP        string   `json:"ip,omitempty"`
+	Endpoints []string `json:"endpoints,omitempty"`
+	Routes    []string `json:"routes,omitempty"`
 }

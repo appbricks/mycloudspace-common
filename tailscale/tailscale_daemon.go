@@ -65,6 +65,8 @@ type TailscaleDaemon struct {
 	// listen address ([ip]:port) of optional debug server
 	Debug string
 
+	// tunnel device
+	devName string
 	// wireguard control service
 	wgDevice *device.Device
 	
@@ -119,6 +121,10 @@ func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 
 		exit: &sync.WaitGroup{},
 	}
+}
+
+func (tsd *TailscaleDaemon) TunnelDeviceName() string {
+	return tsd.devName
 }
 
 func (tsd *TailscaleDaemon) WireguardDevice() *device.Device {
@@ -364,6 +370,9 @@ func  (tsd *TailscaleDaemon) tryEngine(logf logger.Logf, linkMon *monitor.Mon, n
 		if wrapNetstack {
 			conf.Router = netstack.NewSubnetRouterWrapper(conf.Router)
 		}
+
+		// MyCS: save tunnel device name
+		tsd.devName = devName
 	}
 	e, err = wgengine.NewUserspaceEngine(logf, conf)
 	if err != nil {

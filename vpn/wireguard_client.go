@@ -40,19 +40,9 @@ type wireguard struct {
 
 func newWireguardClient(cfg *wireguardConfig) (*wireguard, error) {
 
-	var (
-		err error
-
-		nc network.NetworkContext
-	)
-
-	if nc, err = network.NewNetworkContext(); err != nil {
-		return nil, err
-	}
-
 	return &wireguard{
 		cfg: cfg,
-		nc:  nc,
+		nc:  network.NewNetworkContext(),
 
 		errs:         make(chan error),
 		term:         make(chan os.Signal, 1),

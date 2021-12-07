@@ -127,10 +127,6 @@ func (tsd *TailscaleDaemon) TunnelDeviceName() string {
 	return tsd.devName
 }
 
-func (tsd *TailscaleDaemon) WireguardDevice() *device.Device {
-	return tsd.wgDevice
-}
-
 func (tsd *TailscaleDaemon) Start() error {
 	return tsd.run()
 }

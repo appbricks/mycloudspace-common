@@ -153,7 +153,7 @@ func (ms *monitorService) postEvents() {
 			event := cloudevents.NewEvent()
 			event.SetID(eventUUID)
 			event.SetType(networkMetricEventType)
-			event.SetSubject("MyCS Application Monitors")
+			event.SetSubject("Application Monitor Snapshot")
 			event.SetDataContentType("application/json")
 			event.SetTime(time.Now())
 			if err = event.SetData(cloudevents.ApplicationJSON, data); err != nil {

@@ -110,6 +110,7 @@ type testSender struct {
 	cumalativeValue int
 }
 func (s *testSender) PostMeasurementEvents(events []*cloudevents.Event) error {
+	defer GinkgoRecover()
 
 	var (
 		err error
@@ -118,7 +119,7 @@ func (s *testSender) PostMeasurementEvents(events []*cloudevents.Event) error {
 	for _, e := range events {
 		Expect(e.Context.GetID()).To(MatchRegexp("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
 		Expect(e.Context.GetType()).To(Equal("io.appbricks.mycs.network.metric"))
-		Expect(e.Context.GetSubject()).To(Equal("MyCS Application Monitors"))
+		Expect(e.Context.GetSubject()).To(Equal("Application Monitor Snapshot"))
 		Expect(e.Context.GetDataContentType()).To(Equal("application/json"))
 
 		data := make(map[string]interface{})

@@ -2,6 +2,7 @@ package monitors
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -13,11 +14,16 @@ import (
 	"github.com/mevansam/goutils/utils"
 )
 
-const networkMetricEventType = `io.appbricks.mycs.network.metric` 
+const networkMetricEventType = `io.appbricks.mycs.network.metric`
 const collectionInterval = 1000 // 1 second in ms
 
 type Sender interface {
-	PostMeasurementEvents(events []*cloudevents.Event) error
+	PostMeasurementEvents(events []*cloudevents.Event) ([]PostEventErrors, error)
+}
+
+type PostEventErrors struct {
+	Event *cloudevents.Event
+	Error string
 }
 
 type monitor struct {
@@ -27,14 +33,14 @@ type monitor struct {
 	lock *sync.Mutex
 }
 
-type monitorService struct {
+type MonitorService struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	sender Sender
 	sendWG sync.WaitGroup
 
-	sendInterval, 
+	sendInterval,
 	sendCountdown int
 
 	monitors []*monitor
@@ -42,7 +48,7 @@ type monitorService struct {
 
 	eventPayloads []*eventPayload
 
-	authExecTimer *utils.ExecTimer
+	snapshotTimer *utils.ExecTimer
 }
 
 type eventPayload struct {
@@ -56,11 +62,11 @@ type monitorSnapshot struct {
 // Creates a new monitor services with a 'sender' that
 // will post monitor events to an upstream service
 // every 'sendInterval' seconds.
-func NewMonitorService(sender Sender, sendInterval int) *monitorService {
+func NewMonitorService(sender Sender, sendInterval int) *MonitorService {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &monitorService{
+	return &MonitorService{
 		ctx:    ctx,
 		cancel: cancel,
 
@@ -75,7 +81,7 @@ func NewMonitorService(sender Sender, sendInterval int) *monitorService {
 	}
 }
 
-func (ms *monitorService) NewMonitor(name string) *monitor {
+func (ms *MonitorService) NewMonitor(name string) *monitor {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 
@@ -90,12 +96,12 @@ func (ms *monitorService) NewMonitor(name string) *monitor {
 	return monitor
 }
 
-func (ms *monitorService) Start() error {
-	ms.authExecTimer = utils.NewExecTimer(ms.ctx, ms.collect, false)
-	return ms.authExecTimer.Start(collectionInterval)
+func (ms *MonitorService) Start() error {
+	ms.snapshotTimer = utils.NewExecTimer(ms.ctx, ms.collect, false)
+	return ms.snapshotTimer.Start(collectionInterval)
 }
 
-func (ms *monitorService) collect() (time.Duration, error) {
+func (ms *MonitorService) collect() (time.Duration, error) {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 
@@ -111,10 +117,10 @@ func (ms *monitorService) collect() (time.Duration, error) {
 	return collectionInterval, nil
 }
 
-func (ms *monitorService) collectEvents() {
+func (ms *MonitorService) collectEvents() {
 
+	addPayload := false
 	eventPayload := eventPayload{}
-	ms.eventPayloads = append(ms.eventPayloads, &eventPayload)
 	for _, m := range ms.monitors {
 		monitorSnapshot := monitorSnapshot{
 			Name: m.name,
@@ -124,15 +130,19 @@ func (ms *monitorService) collectEvents() {
 		for _, c := range m.counters {
 			counterSnapshot := c.collect()
 			monitorSnapshot.Counters = append(monitorSnapshot.Counters, counterSnapshot)
+			addPayload = true
 		}
+	}
+	if addPayload {
+		ms.eventPayloads = append(ms.eventPayloads, &eventPayload)
 	}
 }
 
-func (ms *monitorService) postEvents() {
+func (ms *MonitorService) postEvents() {
 	numEvents := len(ms.eventPayloads)
-	logger.DebugMessage("monitorService.collect(): Posting %d cloud events", numEvents)
+	logger.TraceMessage("monitorService.collect(): Posting %d cloud events", numEvents)
 
-	// make a copy of all the payloads that will 
+	// make a copy of all the payloads that will
 	// be pushed to the cloud asynchronously
 	eventPayloads := make([]*eventPayload, numEvents)
 	copy(eventPayloads, ms.eventPayloads)
@@ -144,12 +154,14 @@ func (ms *monitorService) postEvents() {
 
 		var (
 			err error
+
+			postEventErrors []PostEventErrors
 		)
-		
+
 		events := make([]*event.Event, 0, numEvents)
 		for _, data := range eventPayloads {
 			eventUUID := uuid.NewString()
-			
+
 			event := cloudevents.NewEvent()
 			event.SetID(eventUUID)
 			event.SetType(networkMetricEventType)
@@ -158,30 +170,61 @@ func (ms *monitorService) postEvents() {
 			event.SetTime(time.Now())
 			if err = event.SetData(cloudevents.ApplicationJSON, data); err != nil {
 				logger.ErrorMessage(
-					"monitorService.collect(): Unable to add monitor payload to cloud event instance with id \"%s\": %s", 
+					"monitorService.collect(): Unable to add monitor payload to cloud event instance with id \"%s\": %s",
 					eventUUID, err.Error(),
 				)
 			}
 			events = append(events, &event)
 		}
-		if err = ms.sender.PostMeasurementEvents(events); err != nil {
-			logger.ErrorMessage("monitorService.collect(): Unable to post measurement events: %s", err.Error())
+		if len(events) > 0 {
+			if postEventErrors, err = ms.sender.PostMeasurementEvents(events); err != nil {
+				logger.ErrorMessage(
+					"monitorService.collect(): Unable to post measurement events. Will attempt to re-post in next cycle: %s",
+					err.Error(),
+				)
+				// put back the counters
+				ms.lock.Lock()
+				ms.eventPayloads = append(eventPayloads, ms.eventPayloads...)
+				ms.lock.Unlock()
+			}
+			if len(postEventErrors) > 0 {
+				repostList := []*eventPayload{}
+				for _, e := range postEventErrors {
+					logger.ErrorMessage(
+						"monitorService.collect(): Event with id %s failed to post with error: %s",
+						e.Event.Context.GetID(), e.Error,
+					)
+					ep := new(eventPayload)
+					if err = json.Unmarshal(e.Event.Data(), &ep); err != nil {
+						logger.ErrorMessage(
+							"monitorService.collect(): Unable to unmarshal data for event with id %s to queue for reposting: %s",
+							e.Event.Context.GetID(), err.Error(),
+						)
+					} else {
+						repostList = append(repostList, ep)
+					}
+				}
+				// put back counters that were not pushed to the event bus
+				ms.lock.Lock()
+				ms.eventPayloads = append(repostList, ms.eventPayloads...)
+				ms.lock.Unlock()
+			}
 		}
-	}()	
+	}()
 }
 
-func (ms *monitorService) Stop() {
+func (ms *MonitorService) Stop() {
 
-	if ms.authExecTimer != nil {
-		if err := ms.authExecTimer.Stop(); err != nil {
+	if ms.snapshotTimer != nil {
+		if err := ms.snapshotTimer.Stop(); err != nil {
 			logger.DebugMessage(
-				"monitorService.Stop(): Auth execution timer stopped with err: %s", 
-				err.Error())	
+				"monitorService.Stop(): Auth execution timer stopped with err: %s",
+				err.Error())
 		}
 	}
 	ms.sendWG.Wait()
 
-	// ensure all data that is waiting to 
+	// ensure all data that is waiting to
 	// be collected or posted are processed
 	ms.lock.Lock()
 	defer ms.lock.Unlock()

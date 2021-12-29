@@ -2,14 +2,15 @@ package monitors_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/appbricks/mycloudspace-common/monitors"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/mevansam/goutils/utils"
-	"go.uber.org/atomic"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -31,7 +32,7 @@ var _ = Describe("Monitors", func() {
 		counter := monitors.NewCounter("testCounter", false)
 		Expect(counter).NotTo(BeNil())
 		monitor.AddCounter(counter)
-		
+
 		err = msvc.Start()
 		Expect(err).NotTo(HaveOccurred())
 
@@ -72,14 +73,14 @@ var _ = Describe("Monitors", func() {
 		counter := monitors.NewCounter("testCounter", true)
 		Expect(counter).NotTo(BeNil())
 		monitor.AddCounter(counter)
-		
+
 		err = msvc.Start()
 		Expect(err).NotTo(HaveOccurred())
 
 		wg := sync.WaitGroup{}
 		wg.Add(3)
 
-		var cumalativeValue atomic.Int64
+		var cumalativeValue int64
 		incAt := []time.Duration{100, 200, 500}
 		for i := 0; i < 3; i++ {
 			incInt := incAt[i]
@@ -89,7 +90,7 @@ var _ = Describe("Monitors", func() {
 				for t < 15500 {
 					timer := time.NewTicker(incInt * time.Millisecond)
 					<-timer.C
-					counter.Set(cumalativeValue.Add(rand.Int63n(4)+1))
+					counter.Set(atomic.AddInt64(&cumalativeValue, rand.Int63n(4)+1))
 					t += incInt
 				}
 				wg.Done()
@@ -98,38 +99,60 @@ var _ = Describe("Monitors", func() {
 		wg.Wait()
 
 		msvc.Stop()
+		Expect(counter.Get()).To(Equal(cumalativeValue))
 		Expect(s.numEvents).To(Equal(16))
-		Expect(s.cumalativeValue).To(Equal(int(cumalativeValue.Load())))
+		Expect(s.cumalativeValue).To(Equal(int(atomic.LoadInt64(&cumalativeValue))))
 	})
 })
 
 type testSender struct {
-	events []*cloudevents.Event	
+	events []*cloudevents.Event
 
+	iteration,
 	numEvents,
 	cumalativeValue int
 }
-func (s *testSender) PostMeasurementEvents(events []*cloudevents.Event) error {
+func (s *testSender) PostMeasurementEvents(events []*cloudevents.Event) ([]monitors.PostEventErrors, error) {
 	defer GinkgoRecover()
 
 	var (
 		err error
 	)
+	s.iteration++
 
-	for _, e := range events {
-		Expect(e.Context.GetID()).To(MatchRegexp("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
-		Expect(e.Context.GetType()).To(Equal("io.appbricks.mycs.network.metric"))
-		Expect(e.Context.GetSubject()).To(Equal("Application Monitor Snapshot"))
-		Expect(e.Context.GetDataContentType()).To(Equal("application/json"))
+	resp := []monitors.PostEventErrors{}
+	if s.iteration > 1 {
+		for i, e := range events {
 
-		data := make(map[string]interface{})
-		err = json.Unmarshal(e.Data(), &data)
-		Expect(err).NotTo(HaveOccurred())
-		
-		s.numEvents++
-		s.cumalativeValue += int((utils.MustGetValueAtPath("monitors/0/counters/0/value", data)).(float64))		
-		s.events = append(s.events, e)
+			if s.iteration == 2 && i == 1 {
+				// fail the second event which should repost next iteration
+				resp = append(
+					resp,
+					monitors.PostEventErrors{
+						Event: e,
+						Error: fmt.Sprintf("%s failed to post", e.Context.GetID()),
+					},
+				)
+				continue
+			}
+
+			Expect(e.Context.GetID()).To(MatchRegexp("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
+			Expect(e.Context.GetType()).To(Equal("io.appbricks.mycs.network.metric"))
+			Expect(e.Context.GetSubject()).To(Equal("Application Monitor Snapshot"))
+			Expect(e.Context.GetDataContentType()).To(Equal("application/json"))
+
+			data := make(map[string]interface{})
+			err = json.Unmarshal(e.Data(), &data)
+			Expect(err).NotTo(HaveOccurred())
+
+			s.numEvents++
+			s.cumalativeValue += int((utils.MustGetValueAtPath("monitors/0/counters/0/value", data)).(float64))
+			s.events = append(s.events, e)
+		}
+	} else {
+		// first iteration we fail the entire post. counters should repost next iteration
+		return nil, fmt.Errorf("failing post")
 	}
 
-	return nil
+	return resp, nil
 }

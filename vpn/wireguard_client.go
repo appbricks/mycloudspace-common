@@ -148,6 +148,10 @@ func (w *wireguard) Connect() error {
 	if err = w.wgctrlClient.Configure(w.cfg.config); err != nil {
 		return err
 	}
+	// disable ipv6
+	if err = w.nc.DisableIPv6(); err != nil {
+		return err
+	}
 	// configure dns
 	if dnsManager, err = w.nc.NewDNSManager(); err != nil {
 		return err

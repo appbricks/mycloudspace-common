@@ -129,8 +129,10 @@ func (ms *MonitorService) collectEvents() {
 
 		for _, c := range m.counters {
 			counterSnapshot := c.collect()
-			monitorSnapshot.Counters = append(monitorSnapshot.Counters, counterSnapshot)
-			addPayload = true
+			if counterSnapshot != nil {
+				monitorSnapshot.Counters = append(monitorSnapshot.Counters, counterSnapshot)
+				addPayload = true	
+			}
 		}
 	}
 	if addPayload {

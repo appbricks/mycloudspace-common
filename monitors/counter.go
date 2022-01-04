@@ -9,7 +9,8 @@ import (
 type Counter struct {
 	name string
 
-	cumalative bool
+	cumalative,
+	ignoreZeroSnapshots bool
 
 	incBy,
 	value,
@@ -31,7 +32,8 @@ func NewCounter(name string, cumalative bool) *Counter {
 	return &Counter{
 		name: name,
 
-		cumalative: cumalative,
+		cumalative:          cumalative,
+		ignoreZeroSnapshots: false,
 
 		incBy: 1,
 		value: 0,
@@ -39,18 +41,25 @@ func NewCounter(name string, cumalative bool) *Counter {
 	}
 }
 
+func (c *Counter) IgnoreZeroSnapshots() {
+	c.ignoreZeroSnapshots = true
+}
+
 func (c *Counter) collect() *counterSnapshot {
 	c.counterLock.Lock()
 	defer c.counterLock.Unlock()
 
-	cs := &counterSnapshot{
-		Name: c.name,
-		Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
-		Value: c.value,
+	if !c.ignoreZeroSnapshots || c.value != 0 {
+		cs := &counterSnapshot{
+			Name: c.name,
+			Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
+			Value: c.value,
+		}
+		c.cumalativeValue += c.value
+		c.value = 0
+		return cs	
 	}
-	c.cumalativeValue += c.value
-	c.value = 0
-	return cs
+	return nil
 }
 
 func (c *Counter) Name() string {

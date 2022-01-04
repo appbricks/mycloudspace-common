@@ -140,7 +140,6 @@ func (ms *MonitorService) collectEvents() {
 
 func (ms *MonitorService) postEvents() {
 	numEvents := len(ms.eventPayloads)
-	logger.TraceMessage("monitorService.collect(): Posting %d cloud events", numEvents)
 
 	// make a copy of all the payloads that will
 	// be pushed to the cloud asynchronously
@@ -157,6 +156,7 @@ func (ms *MonitorService) postEvents() {
 
 			postEventErrors []PostEventErrors
 		)
+		logger.TraceMessage("monitorService.postEvents(): Posting %d cloud events", numEvents)
 
 		events := make([]*event.Event, 0, numEvents)
 		for _, data := range eventPayloads {
@@ -170,7 +170,7 @@ func (ms *MonitorService) postEvents() {
 			event.SetTime(time.Now())
 			if err = event.SetData(cloudevents.ApplicationJSON, data); err != nil {
 				logger.ErrorMessage(
-					"monitorService.collect(): Unable to add monitor payload to cloud event instance with id \"%s\": %s",
+					"monitorService.postEvents(): Unable to add monitor payload to cloud event instance with id \"%s\": %s",
 					eventUUID, err.Error(),
 				)
 			}
@@ -179,25 +179,25 @@ func (ms *MonitorService) postEvents() {
 		if len(events) > 0 {
 			if postEventErrors, err = ms.sender.PostMeasurementEvents(events); err != nil {
 				logger.ErrorMessage(
-					"monitorService.collect(): Unable to post measurement events. Will attempt to re-post in next cycle: %s",
+					"monitorService.postEvents(): Unable to post measurement events. Will attempt to re-post in next cycle: %s",
 					err.Error(),
 				)
 				// put back the counters
 				ms.lock.Lock()
 				ms.eventPayloads = append(eventPayloads, ms.eventPayloads...)
 				ms.lock.Unlock()
-			}
-			if len(postEventErrors) > 0 {
+
+			} else if len(postEventErrors) > 0 {
 				repostList := []*eventPayload{}
 				for _, e := range postEventErrors {
 					logger.ErrorMessage(
-						"monitorService.collect(): Event with id %s failed to post with error: %s",
+						"monitorService.postEvents(): Event with id %s failed to post with error: %s",
 						e.Event.Context.GetID(), e.Error,
 					)
 					ep := new(eventPayload)
 					if err = json.Unmarshal(e.Event.Data(), &ep); err != nil {
 						logger.ErrorMessage(
-							"monitorService.collect(): Unable to unmarshal data for event with id %s to queue for reposting: %s",
+							"monitorService.postEvents(): Unable to unmarshal data for event with id %s to queue for reposting: %s",
 							e.Event.Context.GetID(), err.Error(),
 						)
 					} else {
@@ -227,10 +227,9 @@ func (ms *MonitorService) Stop() {
 	// ensure all data that is waiting to
 	// be collected or posted are processed
 	ms.lock.Lock()
-	defer ms.lock.Unlock()
-
 	ms.collectEvents()
 	ms.postEvents()
+	ms.lock.Unlock()
 	ms.sendWG.Wait()
 }
 

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/appbricks/mycloudspace-common/events"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/cloudevents/sdk-go/v2/event"
 	"github.com/google/uuid"
@@ -18,12 +19,7 @@ const networkMetricEventType = `io.appbricks.mycs.network.metric`
 const collectionInterval = 1000 // 1 second in ms
 
 type Sender interface {
-	PostMeasurementEvents(events []*cloudevents.Event) ([]PostEventErrors, error)
-}
-
-type PostEventErrors struct {
-	Event *cloudevents.Event
-	Error string
+	PostMeasurementEvents(events []*cloudevents.Event) ([]events.CloudEventError, error)
 }
 
 type monitor struct {
@@ -156,7 +152,7 @@ func (ms *MonitorService) postEvents() {
 		var (
 			err error
 
-			postEventErrors []PostEventErrors
+			postEventErrors []events.CloudEventError
 		)
 		logger.TraceMessage("monitorService.postEvents(): Posting %d cloud events", numEvents)
 

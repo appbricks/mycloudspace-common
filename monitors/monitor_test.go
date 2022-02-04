@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/appbricks/mycloudspace-common/events"
 	"github.com/appbricks/mycloudspace-common/monitors"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/mevansam/goutils/utils"
@@ -112,7 +113,7 @@ type testSender struct {
 	numEvents,
 	cumalativeValue int
 }
-func (s *testSender) PostMeasurementEvents(events []*cloudevents.Event) ([]monitors.PostEventErrors, error) {
+func (s *testSender) PostMeasurementEvents(cloudEvents []*cloudevents.Event) ([]events.CloudEventError, error) {
 	defer GinkgoRecover()
 
 	var (
@@ -120,15 +121,15 @@ func (s *testSender) PostMeasurementEvents(events []*cloudevents.Event) ([]monit
 	)
 	s.iteration++
 
-	resp := []monitors.PostEventErrors{}
+	resp := []events.CloudEventError{}
 	if s.iteration > 1 {
-		for i, e := range events {
+		for i, e := range cloudEvents {
 
 			if s.iteration == 2 && i == 1 {
 				// fail the second event which should repost next iteration
 				resp = append(
 					resp,
-					monitors.PostEventErrors{
+					events.CloudEventError{
 						Event: e,
 						Error: fmt.Sprintf("%s failed to post", e.Context.GetID()),
 					},

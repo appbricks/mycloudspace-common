@@ -1,4 +1,4 @@
-package monitors_test
+package events_test
 
 import (
 	"testing"
@@ -10,11 +10,11 @@ import (
 	"github.com/onsi/gomega/gexec"
 )
 
-func TestMonitors(t *testing.T) {
+func TestEvents(t *testing.T) {
 	logger.Initialize()
 
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "monitors")
+	RunSpecs(t, "events")
 }
 
 var _ = AfterSuite(func() {

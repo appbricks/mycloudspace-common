@@ -1,6 +1,7 @@
 package vpn
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,10 +13,12 @@ import (
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun"
 
+	"github.com/appbricks/mycloudspace-common/monitors"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/network"
+	"github.com/mevansam/goutils/utils"
 )
 
 type wireguard struct {	
@@ -36,18 +39,36 @@ type wireguard struct {
 	disconnected chan bool
 
 	err error
+
+	// bytes sent and received through the tunnel
+	sent, recd *monitors.Counter
+
+	metricsTimer *utils.ExecTimer
+	metricsError error
 }
 
-func newWireguardClient(cfg *wireguardConfig) (*wireguard, error) {
+func newWireguardClient(cfg *wireguardConfig, monitorService *monitors.MonitorService) (*wireguard, error) {
 
-	return &wireguard{
+	w := &wireguard{
 		cfg: cfg,
 		nc:  network.NewNetworkContext(),
 
 		errs:         make(chan error),
 		term:         make(chan os.Signal, 1),
 		disconnected: make(chan bool),
-	}, nil
+	}
+
+	w.sent = monitors.NewCounter("sent", true)
+	w.sent.IgnoreZeroSnapshots()
+	w.recd = monitors.NewCounter("recd", true)
+	w.recd.IgnoreZeroSnapshots()
+
+	// create monitors
+	monitor := monitorService.NewMonitor("space-vpn")
+	monitor.AddCounter(w.sent)
+	monitor.AddCounter(w.recd)
+
+	return w, nil
 }
 
 func (w *wireguard) Connect() error {
@@ -175,10 +196,23 @@ func (w *wireguard) Connect() error {
 		}	
 	}
 
+	// start background thread to record tunnel metrics
+	w.metricsTimer = utils.NewExecTimer(context.Background(), w.recordNetworkMetrics, false)
+	if err = w.metricsTimer.Start(500); err != nil {
+		logger.ErrorMessage(
+			"wireguard.Connect(): Unable to start metrics collection job: %s", 
+			err.Error(),
+		)
+	}
+
 	return nil
 }
 
 func (w *wireguard) Disconnect() error {
+	if w.metricsTimer != nil {
+		w.metricsTimer.Stop()
+	}
+
 	w.term<-os.Interrupt
 	select {
 		case <-w.disconnected:		
@@ -192,6 +226,34 @@ func (w *wireguard) Disconnect() error {
 	return nil
 }
 
+func (w *wireguard) recordNetworkMetrics() (time.Duration, error) {
+
+	var (
+		err error
+		
+		sent, recd int64
+	)
+
+	if recd, sent, err = w.wgctrlClient.BytesTransmitted(); err != nil {
+		logger.ErrorMessage(
+			"wireguard.recordNetworkMetrics(): Failed to retrieve wireguard device information: %s", 
+			err.Error(),
+		)
+		w.metricsError = err
+		
+	} else {
+		if recd > 0 {
+			w.recd.Set(recd)
+		}
+		if sent > 0 {
+			w.sent.Set(sent)
+		}
+	}
+	
+	// record metrics every 500ms
+	return 500, nil
+}
+
 func (w *wireguard) BytesTransmitted() (int64, int64, error) {
-	return w.wgctrlClient.BytesTransmitted()
+	return w.recd.Get(), w.sent.Get(), w.metricsError
 }

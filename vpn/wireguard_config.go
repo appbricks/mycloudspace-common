@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/appbricks/mycloudspace-common/monitors"
 	qrcode "github.com/skip2/go-qrcode"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
@@ -155,8 +156,8 @@ func newWireguardConfigFromTarget(configData ConfigData) (*wireguardConfig, erro
 	return c, nil
 }
 
-func (c *wireguardConfig) NewClient() (Client, error) {
-	return newWireguardClient(c)
+func (c *wireguardConfig) NewClient(monitorService *monitors.MonitorService) (Client, error) {
+	return newWireguardClient(c, monitorService)
 }
 
 func (c *wireguardConfig) Config() string {

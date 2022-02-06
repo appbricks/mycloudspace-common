@@ -2,10 +2,12 @@ package vpn
 
 import (
 	"fmt"
+
+	"github.com/appbricks/mycloudspace-common/monitors"
 )
 
 type Config interface {
-	NewClient() (Client, error)
+	NewClient(monitorService *monitors.MonitorService) (Client, error)
 	Config() string
 
 	Save(path string) (string, error)

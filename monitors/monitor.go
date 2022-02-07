@@ -154,7 +154,7 @@ func (ms *MonitorService) postEvents() {
 
 			postEventErrors []events.CloudEventError
 		)
-		logger.TraceMessage("monitorService.postEvents(): Posting %d cloud events", numEvents)
+		logger.DebugMessage("monitorService.postEvents(): Posting %d cloud events", numEvents)
 
 		events := make([]*event.Event, 0, numEvents)
 		for _, data := range eventPayloads {

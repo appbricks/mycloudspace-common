@@ -21,11 +21,11 @@ type Counter struct {
 }
 
 type counterSnapshot struct {
-	Name      string `json:"name"`
-	Timestamp int64  `json:"timestamp"`
-	Value     int64  `json:"value"`
+	Name      *string `json:"name"`
+	Timestamp int64   `json:"timestamp"`
+	Value     int64   `json:"value"`
 
-	Attribs map[string]string `json:"attribs,omitempty"`
+	Attribs *map[string]string `json:"attribs,omitempty"`
 }
 
 // Returns a counter. If 'cumalative=true' then setting the counter
@@ -77,9 +77,10 @@ func (c *Counter) collect() *counterSnapshot {
 
 	if !c.ignoreZeroSnapshots || c.value != 0 {
 		cs := &counterSnapshot{
-			Name: c.name,
+			Name:      &c.name,
+			Attribs:   &c.attribs,
 			Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
-			Value: c.value,
+			Value:     c.value,
 		}
 		c.cumalativeValue += c.value
 		c.value = 0

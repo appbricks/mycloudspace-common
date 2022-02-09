@@ -22,7 +22,7 @@ type Sender interface {
 	PostMeasurementEvents(events []*cloudevents.Event) ([]events.CloudEventError, error)
 }
 
-type monitor struct {
+type Monitor struct {
 	name     string
 	counters []*Counter
 
@@ -39,7 +39,7 @@ type MonitorService struct {
 	sendInterval,
 	sendCountdown int
 
-	monitors []*monitor
+	monitors []*Monitor
 	lock     sync.Mutex
 
 	eventPayloads []*eventPayload
@@ -51,7 +51,7 @@ type eventPayload struct {
 	Monitors []*monitorSnapshot `json:"monitors"`
 }
 type monitorSnapshot struct {
-	Name     string            `json:"name"`
+	Name     string             `json:"name"`
 	Counters []*counterSnapshot `json:"counters"`
 }
 
@@ -70,18 +70,18 @@ func NewMonitorService(sender Sender, sendInterval int) *MonitorService {
 		sendInterval:  sendInterval-1,
 		sendCountdown: sendInterval-1,
 
-		monitors: []*monitor{},
+		monitors: []*Monitor{},
 
 		// payload for each snapshot collected
 		eventPayloads: make([]*eventPayload, 0, sendInterval),
 	}
 }
 
-func (ms *MonitorService) NewMonitor(name string) *monitor {
+func (ms *MonitorService) NewMonitor(name string) *Monitor {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 
-	monitor := &monitor{
+	monitor := &Monitor{
 		name:     name,
 		counters: []*Counter{},
 
@@ -231,7 +231,7 @@ func (ms *MonitorService) Stop() {
 	ms.sendWG.Wait()
 }
 
-func (m *monitor) AddCounter(counter *Counter) {
+func (m *Monitor) AddCounter(counter *Counter) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 

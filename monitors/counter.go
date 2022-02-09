@@ -7,7 +7,8 @@ import (
 )
 
 type Counter struct {
-	name string
+	name    string
+	attribs map[string]string
 
 	cumalative,
 	ignoreZeroSnapshots bool
@@ -23,17 +24,23 @@ type counterSnapshot struct {
 	Name      string `json:"name"`
 	Timestamp int64  `json:"timestamp"`
 	Value     int64  `json:"value"`
+
+	Attribs map[string]string `json:"attribs,omitempty"`
 }
 
 // Returns a counter. If 'cumalative=true' then setting the counter
 // value is assumed to be a cumalative value and will be determined
 // using the last accumlated value.
-func NewCounter(name string, cumalative bool) *Counter {
+func NewCounter(
+	name string, 
+	cumalative, ignoreZeroSnapshots bool,
+) *Counter {
+
 	return &Counter{
 		name: name,
 
 		cumalative:          cumalative,
-		ignoreZeroSnapshots: false,
+		ignoreZeroSnapshots: ignoreZeroSnapshots,
 
 		incBy: 1,
 		value: 0,
@@ -41,8 +48,27 @@ func NewCounter(name string, cumalative bool) *Counter {
 	}
 }
 
-func (c *Counter) IgnoreZeroSnapshots() {
-	c.ignoreZeroSnapshots = true
+func NewCounterWithAttribs(
+	name string, 
+	cumalative, ignoreZeroSnapshots bool, 
+	attribs map[string]string,
+) *Counter {
+
+	return &Counter{
+		name:    name,
+		attribs: attribs,
+
+		cumalative:          cumalative,
+		ignoreZeroSnapshots: ignoreZeroSnapshots,
+
+		incBy: 1,
+		value: 0,
+		cumalativeValue: 0,
+	}
+}
+
+func (c *Counter) AddAttribute(name, value string) {
+	c.attribs[name] = value
 }
 
 func (c *Counter) collect() *counterSnapshot {

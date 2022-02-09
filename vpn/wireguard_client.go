@@ -58,10 +58,8 @@ func newWireguardClient(cfg *wireguardConfig, monitorService *monitors.MonitorSe
 		disconnected: make(chan bool),
 	}
 
-	w.sent = monitors.NewCounter("sent", true)
-	w.sent.IgnoreZeroSnapshots()
-	w.recd = monitors.NewCounter("recd", true)
-	w.recd.IgnoreZeroSnapshots()
+	w.sent = monitors.NewCounter("sent", true, true)
+	w.recd = monitors.NewCounter("recd", true, true)
 
 	// create monitors
 	monitor := monitorService.NewMonitor("space-vpn")

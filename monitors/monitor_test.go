@@ -30,7 +30,7 @@ var _ = Describe("Monitors", func() {
 
 		monitor := msvc.NewMonitor("testMonitor")
 		Expect(monitor).NotTo(BeNil())
-		counter := monitors.NewCounter("testCounter", false)
+		counter := monitors.NewCounter("testCounter", false, false)
 		Expect(counter).NotTo(BeNil())
 		monitor.AddCounter(counter)
 
@@ -71,7 +71,7 @@ var _ = Describe("Monitors", func() {
 
 		monitor := msvc.NewMonitor("testMonitor")
 		Expect(monitor).NotTo(BeNil())
-		counter := monitors.NewCounter("testCounter", true)
+		counter := monitors.NewCounter("testCounter", true, false)
 		Expect(counter).NotTo(BeNil())
 		monitor.AddCounter(counter)
 

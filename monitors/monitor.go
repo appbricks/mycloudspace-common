@@ -163,6 +163,7 @@ func (ms *MonitorService) postEvents() {
 			event := cloudevents.NewEvent()
 			event.SetID(eventUUID)
 			event.SetType(networkMetricEventType)
+			event.SetSource("urn:mycs")
 			event.SetSubject("Application Monitor Snapshot")
 			event.SetDataContentType("application/json")
 			event.SetTime(time.Now())

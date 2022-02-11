@@ -118,17 +118,19 @@ func (ms *MonitorService) collectEvents() {
 	addPayload := false
 	eventPayload := eventPayload{}
 	for _, m := range ms.monitors {
-		monitorSnapshot := monitorSnapshot{
-			Name: m.name,
-		}
-		eventPayload.Monitors = append(eventPayload.Monitors, &monitorSnapshot)
-
-		for _, c := range m.counters {
-			counterSnapshot := c.collect()
-			if counterSnapshot != nil {
-				monitorSnapshot.Counters = append(monitorSnapshot.Counters, counterSnapshot)
-				addPayload = true	
+		if len(m.counters) > 0 {
+			monitorSnapshot := monitorSnapshot{
+				Name: m.name,
 			}
+			eventPayload.Monitors = append(eventPayload.Monitors, &monitorSnapshot)
+	
+			for _, c := range m.counters {
+				counterSnapshot := c.collect()
+				if counterSnapshot != nil {
+					monitorSnapshot.Counters = append(monitorSnapshot.Counters, counterSnapshot)
+					addPayload = true	
+				}
+			}	
 		}
 	}
 	if addPayload {

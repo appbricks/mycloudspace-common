@@ -75,6 +75,10 @@ func NewWireguardCtrlClient(ifaceName string) (*WGCtrlClient, error) {
 	return wgcc, nil
 }
 
+func (wgcc *WGCtrlClient) Device() (*wgtypes.Device, error) {
+	return wgcc.wgClient.Device(wgcc.ifaceName)
+}
+
 func (wgcc *WGCtrlClient) Configure(cfg wgtypes.Config) error {
 	return wgcc.wgClient.ConfigureDevice(wgcc.ifaceName, cfg)
 }

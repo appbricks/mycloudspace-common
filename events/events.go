@@ -114,7 +114,6 @@ func NewPublishDataInput(event *cloudevents.Event) (*PublishDataInput, error) {
 	}
 
 	// compress payload and add it to list of payloads
-	compressedPayload.Reset()
 	zlibWriter = zlib.NewWriter(&compressedPayload)
 	if _, err = zlibWriter.Write([]byte(eventPayload)); err != nil {
 		logger.ErrorMessage("EventsAPI.PostMeasurementEvents(): Unable to compress marshaled event: %s", event.String())

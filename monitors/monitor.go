@@ -63,7 +63,7 @@ type monitorSnapshot struct {
 // 'collectInterval' millisecongs.
 func NewMonitorService(sender Sender, sendInterval, collectInterval int) *MonitorService {
 
-	if collectInterval <= sendInterval * 1000  {
+	if collectInterval > sendInterval * 1000 {
 		panic("arg 'collectInterval' in milliseconds' should be less than or equal to arg sendInterval' in seconds.")
 	}
 

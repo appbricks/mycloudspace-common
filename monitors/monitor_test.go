@@ -26,7 +26,7 @@ var _ = Describe("Monitors", func() {
 	It("collects from an incrementing and decrementing monitor counter", func() {
 
 		s := &testSender{}
-		msvc := monitors.NewMonitorService(s, 5)
+		msvc := monitors.NewMonitorService(s, 5, 1000)
 
 		monitor := msvc.NewMonitor("testMonitor")
 		Expect(monitor).NotTo(BeNil())
@@ -67,7 +67,7 @@ var _ = Describe("Monitors", func() {
 	It("collects from an incrementing and decrementing monitor counter", func() {
 
 		s := &testSender{}
-		msvc := monitors.NewMonitorService(s, 5)
+		msvc := monitors.NewMonitorService(s, 5, 1000)
 
 		monitor := msvc.NewMonitor("testMonitor")
 		Expect(monitor).NotTo(BeNil())

@@ -16,7 +16,6 @@ import (
 )
 
 const networkMetricEventType = `io.appbricks.mycs.network.metric`
-const collectionInterval = 1000 // 1 second in ms
 
 type Sender interface {
 	PostMeasurementEvents(events []*cloudevents.Event) ([]events.CloudEventError, error)
@@ -35,6 +34,8 @@ type MonitorService struct {
 
 	sender Sender
 	sendWG sync.WaitGroup
+
+	collectInterval time.Duration
 
 	sendInterval,
 	sendCountdown int
@@ -57,8 +58,14 @@ type monitorSnapshot struct {
 
 // Creates a new monitor services with a 'sender' that
 // will post monitor events to an upstream service
-// every 'sendInterval' seconds.
-func NewMonitorService(sender Sender, sendInterval int) *MonitorService {
+// every 'sendInterval' seconds. This monitor will
+// also collect metrics from all counters every
+// 'collectInterval' millisecongs.
+func NewMonitorService(sender Sender, sendInterval, collectInterval int) *MonitorService {
+
+	if collectInterval <= sendInterval * 1000  {
+		panic("arg 'collectInterval' in milliseconds' should be less than or equal to arg sendInterval' in seconds.")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -66,9 +73,10 @@ func NewMonitorService(sender Sender, sendInterval int) *MonitorService {
 		ctx:    ctx,
 		cancel: cancel,
 
-		sender:        sender,
-		sendInterval:  sendInterval-1,
-		sendCountdown: sendInterval-1,
+		sender:          sender,
+		collectInterval: time.Duration(collectInterval),
+		sendInterval:    sendInterval-1,
+		sendCountdown:   sendInterval-1,
 
 		monitors: []*Monitor{},
 
@@ -94,7 +102,7 @@ func (ms *MonitorService) NewMonitor(name string) *Monitor {
 
 func (ms *MonitorService) Start() error {
 	ms.snapshotTimer = utils.NewExecTimer(ms.ctx, ms.collect, false)
-	return ms.snapshotTimer.Start(collectionInterval)
+	return ms.snapshotTimer.Start(ms.collectInterval)
 }
 
 func (ms *MonitorService) collect() (time.Duration, error) {
@@ -110,7 +118,7 @@ func (ms *MonitorService) collect() (time.Duration, error) {
 	}
 
 	// metrics collected every second
-	return collectionInterval, nil
+	return ms.collectInterval, nil
 }
 
 func (ms *MonitorService) collectEvents() {

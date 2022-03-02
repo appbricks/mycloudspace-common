@@ -62,9 +62,11 @@ func newWireguardClient(cfg *wireguardConfig, monitorService *monitors.MonitorSe
 	w.recd = monitors.NewCounter("recd", true, true)
 
 	// create monitors
-	monitor := monitorService.NewMonitor("space-vpn")
-	monitor.AddCounter(w.sent)
-	monitor.AddCounter(w.recd)
+	if monitorService != nil {
+		monitor := monitorService.NewMonitor("space-vpn")
+		monitor.AddCounter(w.sent)
+		monitor.AddCounter(w.recd)	
+	}
 
 	return w, nil
 }

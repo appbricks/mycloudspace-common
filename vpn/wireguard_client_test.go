@@ -25,8 +25,6 @@ import (
 var _ = Describe("Wireguard Client", func() {
 
 	var (
-		err error
-
 		testTarget *testTarget
 		config     vpn.Config
 		client     vpn.Client
@@ -45,6 +43,11 @@ var _ = Describe("Wireguard Client", func() {
 		})
 
 		It("create wireguard vpn client to connect to a target", func() {
+			isAdmin, err := run.IsAdmin()
+			Expect(err).NotTo(HaveOccurred())
+			if !isAdmin {
+				Fail("This test needs to be run with root privileges. i.e. sudo -E go test -v ./...")
+			}
 
 			var (
 				tunIfaceName string
@@ -67,7 +70,7 @@ var _ = Describe("Wireguard Client", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(checkDevExists(tunIfaceName)).To(BeFalse())
 
-			client, err = config.NewClient()
+			client, err = config.NewClient(nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 			Expect(reflect.TypeOf(client).String()).To(Equal("*vpn.wireguard"))
@@ -83,9 +86,11 @@ var _ = Describe("Wireguard Client", func() {
 			Expect(len(devices)).To(Equal(1))
 			Expect(len((*devices[0]).Peers)).To(Equal(1))
 
-			// status, err := client.StatusText()
-			// Expect(err).NotTo(HaveOccurred())
-			// Expect(status).To(Equal(deviceStatusOutput))
+			wgctrlClient, err := vpn.NewWireguardCtrlClient(tunIfaceName)
+			Expect(err).NotTo(HaveOccurred())
+			status, err := wgctrlClient.StatusText()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(status).To(Equal(deviceStatusOutput))
 
 			// TODO: Fix route check to support linux and windows
 
@@ -99,11 +104,9 @@ var _ = Describe("Wireguard Client", func() {
 			scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
 
 			var matchRoutes = func(line string) {
-				matched, _ := regexp.MatchString(fmt.Sprintf(`^0/1\s+192.168.111.1\s+UGScg?\s+%s\s+$`, tunIfaceName), line)
+				matched, _ := regexp.MatchString(fmt.Sprintf(`default\s+192.168.111.1\s+UGScg?\s+%s\s+$`, tunIfaceName), line)
 				if matched { counter++; return }
 				matched, _ = regexp.MatchString(`^34.204.21.102/32\s+([0-9]+\.?)+\s+UGSc\s+en[0-9]\s+$`, line)
-				if matched { counter++; return }
-				matched, _ = regexp.MatchString(fmt.Sprintf(`^128.0/1\s+192.168.111.1\s+UGSc\s+%s\s+$`, tunIfaceName), line)
 				if matched { counter++; return }
 				matched, _ = regexp.MatchString(fmt.Sprintf(`^192.168.111.1/32\s+%s\s+USc\s+%s\s+$`, tunIfaceName, tunIfaceName), line)
 				if matched { counter++; return }
@@ -114,9 +117,9 @@ var _ = Describe("Wireguard Client", func() {
 			for scanner.Scan() {
 				line := scanner.Text()
 				matchRoutes(line)
-				logger.TraceMessage("Test route: %s <= %d", line, counter)
+				logger.DebugMessage("Test route: %s <= %d", line, counter)
 			}
-			Expect(counter).To(Equal(5))
+			Expect(counter).To(Equal(4))
 
 			// time.Sleep(time.Second * 60)
 
@@ -141,13 +144,13 @@ func checkDevExists(ifaceName string) bool {
 	return false
 }
 
-// const deviceStatusOutput = `interface: utun6 (userspace)
-//   public key: LElaAbWwLh+KE46BOkl9WYvJakalTOYKJXLk2rehUFA=
-//   private key: (hidden)
+const deviceStatusOutput = `interface: utun6 (userspace)
+  public key: LElaAbWwLh+KE46BOkl9WYvJakalTOYKJXLk2rehUFA=
+  private key: (hidden)
 
-// peer: AnTKCPYQCkNACBUsB2otfk+V/D3ZiBpNaQJHsSw0hEo=
-//   endpoint: 34.204.21.102:3399
-//   allowed ips: 0.0.0.0/0
-//   latest handshake: 0001-01-01 00:00:00 +0000 UTC
-//   transfer: 0 B received, 0 B sent
-// `
+peer: AnTKCPYQCkNACBUsB2otfk+V/D3ZiBpNaQJHsSw0hEo=
+  endpoint: 34.204.21.102:3399
+  allowed ips: 0.0.0.0/0
+  latest handshake: 0001-01-01 00:00:00 +0000 UTC
+  transfer: 0 B received, 0 B sent
+`

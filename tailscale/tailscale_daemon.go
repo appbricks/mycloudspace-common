@@ -33,7 +33,6 @@ import (
 	"tailscale.com/net/socks5"
 	"tailscale.com/net/tsdial"
 
-	// "tailscale.com/net/socks5/tssocks"
 	"tailscale.com/net/tstun"
 	"tailscale.com/paths"
 	"tailscale.com/safesocket"

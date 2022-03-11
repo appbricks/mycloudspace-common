@@ -2,7 +2,6 @@ package monitors
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -82,8 +81,10 @@ func (c *Counter) collect() *counterSnapshot {
 			Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
 			Value:     c.value,
 		}
-		c.cumalativeValue += c.value
-		c.value = 0
+		if c.cumalative {
+			c.cumalativeValue += c.value
+			c.value = 0	
+		}
 		return cs	
 	}
 	return nil
@@ -97,7 +98,7 @@ func (c *Counter) Get() int64 {
 	c.counterLock.RLock()
 	defer c.counterLock.RUnlock()
 
-	return atomic.AddInt64(&c.value, c.cumalativeValue)
+	return c.value + c.cumalativeValue
 }
 
 func (c *Counter) SetInc(incValue int64) {
@@ -108,26 +109,26 @@ func (c *Counter) SetInc(incValue int64) {
 }
 
 func (c *Counter) Set(value int64) {
-	c.counterLock.RLock()
-	defer c.counterLock.RUnlock()
+	c.counterLock.Lock()
+	defer c.counterLock.Unlock()
 
 	if c.cumalative {
-		atomic.StoreInt64(&c.value, value - c.cumalativeValue)
+		c.value = value - c.cumalativeValue
 	} else {
-		atomic.StoreInt64(&c.value, value)
+	  c.value = value
 	}
 }
 
 func (c *Counter) Inc() {
-	c.counterLock.RLock()
-	defer c.counterLock.RUnlock()
+	c.counterLock.Lock()
+	defer c.counterLock.Unlock()
 
-	atomic.AddInt64(&c.value, c.incBy)
+	c.value += c.incBy
 }
 
 func (c *Counter) Add(value int64) {
-	c.counterLock.RLock()
-	defer c.counterLock.RUnlock()
+	c.counterLock.Lock()
+	defer c.counterLock.Unlock()
 
-	atomic.AddInt64(&c.value, value)
+	c.value += value
 }

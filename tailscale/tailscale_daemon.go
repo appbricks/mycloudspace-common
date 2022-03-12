@@ -98,9 +98,9 @@ func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 
 	switch logrus.GetLevel() {
 	case logrus.TraceLevel:
-		verboseLevel = 2
+		fallthrough
 	case logrus.DebugLevel:
-		verboseLevel = 1
+		verboseLevel = 2
 	default:
 		verboseLevel = 0
 	}

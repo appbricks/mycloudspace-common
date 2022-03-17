@@ -13,8 +13,11 @@ import (
 	"time"
 
 	"github.com/mevansam/goutils/logger"
+	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
+
+const ErrNoDevice = "wireguard not initialized"
 
 func (tsd *TailscaleDaemon) WireguardStatusText() (string, error) {
 
@@ -87,19 +90,29 @@ func ipsString(ipns []net.IPNet) string {
 // https://www.wireguard.com/xplatform/#cross-platform-userspace-implementation.
 
 // WireguardDevice gathers device information from a device specified by its path
-// and returns a Device.
+// and returns a client Device type.
 func (tsd *TailscaleDaemon) WireguardDevice() (*wgtypes.Device, error) {
 
-	reader, writer := io.Pipe()
-	go func() {
-		defer writer.Close()
-		if err := tsd.wgDevice.IpcGetOperation(writer); err != nil {
-			logger.ErrorMessage("TailscaleDaemon.getDevice(): Error writing response from wireguard device: %s", err.Error())
-		}
-	}()
+	if tsd.wireguardDevice() != nil {
+		reader, writer := io.Pipe()
+		go func() {
+			defer writer.Close()
+			if err := tsd.wgDevice.IpcGetOperation(writer); err != nil {
+				logger.ErrorMessage("TailscaleDaemon.getDevice(): Error writing response from wireguard device: %s", err.Error())
+			}
+		}()	
 
-	// Parse the device from the incoming data stream.
-	return parseDevice(reader)
+		// Parse the device from the incoming data stream.
+		return parseDevice(reader)
+	}
+	return nil, fmt.Errorf(ErrNoDevice)
+}
+
+func (tsd *TailscaleDaemon) wireguardDevice() *device.Device {
+	tsd.mx.Lock()
+	defer tsd.mx.Unlock()
+
+	return tsd.wgDevice
 }
 
 // parseDevice parses a Device and its Peers from an io.Reader.

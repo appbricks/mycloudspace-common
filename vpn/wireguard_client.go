@@ -210,7 +210,7 @@ func (w *wireguard) Connect() error {
 
 func (w *wireguard) Disconnect() error {
 	if w.metricsTimer != nil {
-		w.metricsTimer.Stop()
+		_ = w.metricsTimer.Stop()
 	}
 
 	w.term<-os.Interrupt

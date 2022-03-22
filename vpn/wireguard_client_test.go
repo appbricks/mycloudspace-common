@@ -25,7 +25,7 @@ import (
 var _ = Describe("Wireguard Client", func() {
 
 	var (
-		testTarget *testTarget
+		testService *testService
 		config     vpn.Config
 		client     vpn.Client
 	)
@@ -35,11 +35,11 @@ var _ = Describe("Wireguard Client", func() {
 		BeforeEach(func() {
 			// test http server to mock bastion HTTPS 
 			// backend for vpn config retrieval
-			testTarget = startTestTarget()
+			testService = startTestService()
 		})
 
 		AfterEach(func() {
-			testTarget.stop()
+			testService.stop()
 		})
 
 		It("create wireguard vpn client to connect to a target", func() {
@@ -55,13 +55,13 @@ var _ = Describe("Wireguard Client", func() {
 				outputBuffer bytes.Buffer
 			)
 			
-			testTarget.httpTestSvrExpectedURI = "/static/~bastion-admin/mycs-test.conf"
+			testService.httpTestSvrExpectedURI = "/static/~bastion-admin/mycs-test.conf"
 			
 			// ensure target remotes status is loaded
-			err = testTarget.target.LoadRemoteRefs()
+			err = testService.target.LoadRemoteRefs()
 			Expect(err).NotTo(HaveOccurred())
 
-			configData, err := vpn.NewStaticConfigData(testTarget.target, "bastion-admin", "")
+			configData, err := vpn.NewVPNConfigData(testService)
 			Expect(err).NotTo(HaveOccurred())
 			config, err = vpn.NewConfigFromTarget(configData)
 			Expect(err).NotTo(HaveOccurred())

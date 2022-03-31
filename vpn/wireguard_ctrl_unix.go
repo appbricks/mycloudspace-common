@@ -41,7 +41,7 @@ func (wgcs *WGCtrlService) startUAPI() error {
 				if err == unix.EBADF {
 					wgcs.err<-nil
 				} else {
-					logger.ErrorMessage("WGCtrlService.startUAPI(): UAPI error when stopped: %s", err.Error())
+					logger.DebugMessage("WGCtrlService.startUAPI(): UAPI error when stopped: %s", err.Error())
 					wgcs.err<-err
 				}
 				return

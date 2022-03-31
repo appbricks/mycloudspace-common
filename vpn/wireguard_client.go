@@ -149,10 +149,10 @@ func (w *wireguard) Connect() error {
 		deviceLogger.Verbosef("Shutting down wireguard tunnel")
 
 		if err = w.wgctrlService.Stop(); err != nil {
-			logger.ErrorMessage("wireguard.Connect(): Error closing UAPI socket: %s", err.Error())
+			logger.DebugMessage("wireguard.Connect(): Error closing UAPI socket: %s", err.Error())
 		}
 		if err = w.tunnel.Close(); err != nil {
-			logger.ErrorMessage("wireguard.Connect(): Error closing TUN device: %s", err.Error())
+			logger.DebugMessage("wireguard.Connect(): Error closing TUN device: %s", err.Error())
 		}
 		// cleanup dns and routing
 		w.nc.Clear()
@@ -173,13 +173,6 @@ func (w *wireguard) Connect() error {
 	if err = w.nc.DisableIPv6(); err != nil {
 		return err
 	}
-	// configure dns
-	if dnsManager, err = w.nc.NewDNSManager(); err != nil {
-		return err
-	}
-	if err = dnsManager.AddDNSServers([]string{ w.cfg.tunDNS }); err != nil {
-		return err
-	}
 	// configure routing
 	if routeManager, err = w.nc.NewRouteManager(); err != nil {
 		return err
@@ -194,6 +187,16 @@ func (w *wireguard) Connect() error {
 		if err = tunRoute.MakeDefaultRoute(); err != nil {
 			return err
 		}	
+	}
+	// configure dns
+	if dnsManager, err = w.nc.NewDNSManager(); err != nil {
+		return err
+	}
+	if err = dnsManager.AddDNSServers([]string{ w.cfg.tunDNS }); err != nil {
+		return err
+	}
+	if err = dnsManager.AddSearchDomains([]string{}); err != nil {
+		return err
 	}
 
 	// start background thread to record tunnel metrics

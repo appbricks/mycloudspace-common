@@ -1,12 +1,12 @@
+//go:build linux || darwin
+// +build linux darwin
+
 package vpn
 
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
 	"runtime"
-	"syscall"
 	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
@@ -34,11 +34,8 @@ type wireguard struct {
 	wgctrlService *WGCtrlService
 	wgctrlClient  *WGCtrlClient
 
-	errs         chan error
-	term         chan os.Signal
+	close        chan bool
 	disconnected chan bool
-
-	err error
 
 	// bytes sent and received through the tunnel
 	sent, recd *monitors.Counter
@@ -53,8 +50,7 @@ func newWireguardClient(cfg *wireguardConfig, monitorService *monitors.MonitorSe
 		cfg: cfg,
 		nc:  network.NewNetworkContext(),
 
-		errs:         make(chan error),
-		term:         make(chan os.Signal, 1),
+		close:        make(chan bool),
 		disconnected: make(chan bool),
 	}
 
@@ -100,7 +96,7 @@ func (w *wireguard) Connect() error {
 	}
 	if w.ifaceName, err = network.GetNextAvailabeInterface(w.ifaceName); err != nil {
 		return err
-	}	
+	}
 	// open TUN device on utun#
 	if w.tunnel, err = tun.CreateTUN(w.ifaceName, device.DefaultMTU); err != nil {
 		logger.ErrorMessage("wireguard.Connect(): Failed to create TUN device: %s", err.Error())
@@ -115,8 +111,21 @@ func (w *wireguard) Connect() error {
 		fmt.Sprintf("(%s) ", w.ifaceName),
 	)
 	deviceLogger.Verbosef("Starting mycs wireguard tunnel")
-
+	
 	w.device = device.NewDevice(w.tunnel, conn.NewDefaultBind(), deviceLogger)
+	defer func() {
+		// if an err is being returned then
+		// ensure tunnel and device is closed
+		if err != nil {
+			logger.ErrorMessage("wireguard.Connect(): Exited with error: %s", err.Error())
+			w.tunnel.Close()
+			w.device.Close()
+		}
+	}()
+
+	if err = w.device.Up(); err != nil {
+		return err
+	}
 	deviceLogger.Verbosef("Device started")
 
 	w.wgctrlService = NewWireguardCtrlService(w.ifaceName, w.device, deviceLogger)
@@ -136,14 +145,12 @@ func (w *wireguard) Connect() error {
 		// stop recieving interrupt
 		// signals on channel
 		defer func() {
-			signal.Stop(w.term)
 			w.device.Close()
 			w.disconnected <- true
 		}()
 
 		select {
-			case <-w.term:
-			case w.err = <-w.errs:
+			case <-w.close:
 			case <-w.device.Wait():
 		}		
 		deviceLogger.Verbosef("Shutting down wireguard tunnel")
@@ -159,11 +166,6 @@ func (w *wireguard) Connect() error {
 
 		logger.DebugMessage("wireguard.Connect(): Wireguard client has been disconnected.")
 	}()
-
-	// send termination signals to the term channel 
-	// to indicate connection disconnection
-	signal.Notify(w.term, syscall.SIGTERM)
-	signal.Notify(w.term, os.Interrupt)
 
 	// configure the wireguard tunnel
 	if err = w.wgctrlClient.Configure(w.cfg.config); err != nil {
@@ -216,7 +218,7 @@ func (w *wireguard) Disconnect() error {
 		_ = w.metricsTimer.Stop()
 	}
 
-	w.term<-os.Interrupt
+	w.close<-true
 	select {
 		case <-w.disconnected:		
 		case <-time.After(time.Millisecond * 500):

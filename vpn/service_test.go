@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("VPN Configuration", func() {
+var _ = Describe("VPN Service", func() {
 
 	var (
 		// err error

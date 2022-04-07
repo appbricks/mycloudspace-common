@@ -90,7 +90,7 @@ var _ = Describe("Wireguard Client", func() {
 			Expect(err).NotTo(HaveOccurred())
 			status, err := wgctrlClient.StatusText()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(status).To(Equal(deviceStatusOutput))
+			Expect(status).To(MatchRegexp(deviceStatusOutput))
 
 			// TODO: Fix route check to support linux and windows
 
@@ -152,5 +152,5 @@ peer: AnTKCPYQCkNACBUsB2otfk+V/D3ZiBpNaQJHsSw0hEo=
   endpoint: 34.204.21.102:3399
   allowed ips: 0.0.0.0/0
   latest handshake: 0001-01-01 00:00:00 +0000 UTC
-  transfer: 0 B received, 0 B sent
+  transfer: 0 B received, 148 B sent
 `

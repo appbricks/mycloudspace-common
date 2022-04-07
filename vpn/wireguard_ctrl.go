@@ -17,21 +17,18 @@ type WGCtrlService struct {
 	uapi net.Listener	
 	err  chan error
 
-	device       *device.Device
-	deviceLogger *device.Logger
+	device *device.Device
 }
 
 func NewWireguardCtrlService(
 	ifaceName string, 
 	device *device.Device, 
-	deviceLogger *device.Logger,
 ) *WGCtrlService {
 
 	return &WGCtrlService{
 		ifaceName:    ifaceName,
 		err:          make(chan error),
 		device:       device,
-		deviceLogger: deviceLogger,
 	}
 }
 

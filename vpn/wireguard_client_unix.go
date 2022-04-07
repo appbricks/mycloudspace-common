@@ -128,7 +128,7 @@ func (w *wireguard) Connect() error {
 	}
 	deviceLogger.Verbosef("Device started")
 
-	w.wgctrlService = NewWireguardCtrlService(w.ifaceName, w.device, deviceLogger)
+	w.wgctrlService = NewWireguardCtrlService(w.ifaceName, w.device)
 	if err = w.wgctrlService.Start(); err != nil {
 		return err
 	}

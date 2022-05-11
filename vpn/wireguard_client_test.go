@@ -90,7 +90,10 @@ var _ = Describe("Wireguard Client", func() {
 			Expect(err).NotTo(HaveOccurred())
 			status, err := wgctrlClient.StatusText()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(status).To(MatchRegexp(deviceStatusOutput))
+
+			fixResult := regexp.MustCompile(`utun[0-9]+`)
+			result := fixResult.ReplaceAllString(status, "utunX")
+			Expect(result).To(Equal(deviceStatusOutput))
 
 			// TODO: Fix route check to support linux and windows
 
@@ -144,7 +147,7 @@ func checkDevExists(ifaceName string) bool {
 	return false
 }
 
-const deviceStatusOutput = `interface: utun6 (userspace)
+const deviceStatusOutput = `interface: utunX (userspace)
   public key: LElaAbWwLh+KE46BOkl9WYvJakalTOYKJXLk2rehUFA=
   private key: (hidden)
 

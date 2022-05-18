@@ -60,7 +60,7 @@ type monitorSnapshot struct {
 // will post monitor events to an upstream service
 // every 'sendInterval' seconds. This monitor will
 // also collect metrics from all counters every
-// 'collectInterval' millisecongs.
+// 'collectInterval' milliseconds.
 func NewMonitorService(sender Sender, sendInterval, collectInterval int) *MonitorService {
 
 	if collectInterval > sendInterval * 1000 {

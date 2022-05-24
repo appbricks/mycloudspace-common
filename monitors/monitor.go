@@ -37,7 +37,7 @@ type MonitorService struct {
 
 	collectInterval time.Duration
 
-	sendInterval,
+	collectCount,
 	sendCountdown int
 
 	monitors []*Monitor
@@ -57,15 +57,11 @@ type monitorSnapshot struct {
 }
 
 // Creates a new monitor services with a 'sender' that
-// will post monitor events to an upstream service
-// every 'sendInterval' seconds. This monitor will
-// also collect metrics from all counters every
-// 'collectInterval' milliseconds.
-func NewMonitorService(sender Sender, sendInterval, collectInterval int) *MonitorService {
-
-	if collectInterval > sendInterval * 1000 {
-		panic("arg 'collectInterval' in milliseconds' should be less than or equal to arg sendInterval' in seconds.")
-	}
+// will post monitor events to an upstream service. The 
+// monitor collects metrics from all counters every
+// 'collectInterval' milliseconds and publishes these
+// metrics after 'collectCount' collections.
+func NewMonitorService(sender Sender, collectCount, collectInterval int) *MonitorService {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -75,13 +71,13 @@ func NewMonitorService(sender Sender, sendInterval, collectInterval int) *Monito
 
 		sender:          sender,
 		collectInterval: time.Duration(collectInterval),
-		sendInterval:    sendInterval-1,
-		sendCountdown:   sendInterval-1,
+		collectCount:    collectCount-1,
+		sendCountdown:   collectCount-1,
 
 		monitors: []*Monitor{},
 
 		// payload for each snapshot collected
-		eventPayloads: make([]*eventPayload, 0, sendInterval),
+		eventPayloads: make([]*eventPayload, 0, collectCount),
 	}
 }
 
@@ -112,7 +108,7 @@ func (ms *MonitorService) collect() (time.Duration, error) {
 	ms.collectEvents()
 	if ms.sendCountdown == 0 {
 		ms.postEvents()
-		ms.sendCountdown = ms.sendInterval
+		ms.sendCountdown = ms.collectCount
 	} else {
 		ms.sendCountdown--
 	}

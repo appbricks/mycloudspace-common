@@ -24,6 +24,7 @@ import (
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnserver"
+	"tailscale.com/ipn/store"
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
 	"tailscale.com/net/dns"
@@ -226,9 +227,10 @@ func (tsd *TailscaleDaemon) run() error {
 	engine = wgengine.NewWatchdog(engine)
 	opts := tsd.ipnServerOpts()
 
-	store, err := ipnserver.StateStore(filepath.Join(tsd.statePath, "tailscaled.state"), logf)
+	// store, err := ipnserver.StateStore(filepath.Join(tsd.statePath, "tailscaled.state"), logf)
+	store, err := store.New(logf, filepath.Join(tsd.statePath, "tailscaled.state"))
 	if err != nil {
-		return fmt.Errorf("ipnserver.StateStore: %w", err)
+		return fmt.Errorf("store.New: %w", err)
 	}
 	srv, err := ipnserver.New(logf, pol.PublicID.String(), store, engine, dialer, nil, opts)
 	if err != nil {
@@ -409,9 +411,9 @@ func shouldWrapNetstack() bool {
 }
 
 func newNetstack(logf logger.Logf, dialer *tsdial.Dialer, e wgengine.Engine) (*netstack.Impl, error) {
-	tunDev, magicConn, ok := e.(wgengine.InternalsGetter).GetInternals()
+	tunDev, magicConn, dns, ok := e.(wgengine.InternalsGetter).GetInternals()
 	if !ok {
 		return nil, fmt.Errorf("%T is not a wgengine.InternalsGetter", e)
 	}
-	return netstack.Create(logf, tunDev, e, magicConn, dialer)
+	return netstack.Create(logf, tunDev, e, magicConn, dialer, dns)
 }

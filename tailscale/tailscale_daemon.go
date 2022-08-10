@@ -347,7 +347,7 @@ func  (tsd *TailscaleDaemon) tryEngine(
 	if !useNetstack {
 		dev, devName, err = tstun.New(logf, name)
 		if err != nil {
-			tstun.Diagnose(logf, name)
+			tstun.Diagnose(logf, name, err)
 			return nil, false, fmt.Errorf("tstun.New(%q): %w", name, err)
 		}
 		conf.Tun = dev

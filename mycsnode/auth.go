@@ -1,21 +1,21 @@
 package mycsnode
 
 type AuthRequest struct {
-	DeviceIDKey string `json:"deviceIDKey"`
-	AuthReqKey  string `json:"authReqKey"`
+	AuthReqIDKey string `json:"authReqIDKey"`
+	AuthReqKey   string `json:"authReqKey"`
 }
 type AuthReqKey struct {
-	UserID              string `json:"userID"`
-	DeviceECDHPublicKey string `json:"deviceECDHPublicKey"`
-	Nonce               int64  `json:"nonce"`
+	RefID   string `json:"refID"`
+	ECDHKey string `json:"ecdhKey"`
+	Nonce   int64  `json:"nonce"`
 }
 type AuthResponse struct {
-	AuthRespKey string `json:"authRespKey"`
-	AuthIDKey   string `json:"authIDKey"`
+	AuthRespIDKey string `json:"authRespIDKey"`
+	AuthRespKey   string `json:"authRespKey"`
 }
 type AuthRespKey struct {
-	NodeECDHPublicKey string `json:"nodeECDHPublicKey"`
-	Nonce             int64  `json:"nonce"`
-	TimeoutAt         int64  `json:"timeoutAt"`
-	DeviceName        string `json:"deviceName"`
+	NodeECDHKey string `json:"nodeECDHKey"`
+	Nonce       int64  `json:"nonce"`
+	TimeoutAt   int64  `json:"timeoutAt"`
+	RefName     string `json:"refName"`
 }

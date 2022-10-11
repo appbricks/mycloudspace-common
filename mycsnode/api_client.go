@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -129,12 +128,62 @@ func NewApiClient(
 	return apiClient, nil
 }
 
+func NewUninitializedApiClient(
+	refName, refID,
+	authPath string,
+) *ApiClient {
+
+	apiClient := &ApiClient{ 		
+		refName: refName,
+		refID:   refID,
+
+		authPath: authPath,
+
+		authTimeout: authTimeout,
+	}
+
+	apiClient.ctx = context.Background()
+
+	return apiClient
+}
+
+func (a *ApiClient) Initialize(
+	clientIDKey string,
+	clientRSAKey *crypto.RSAKey,
+	node userspace.SpaceNode,
+) (error) {
+
+	var (
+		err error
+	)
+
+	a.clientIDKey = clientIDKey
+	a.clientRSAKey = clientRSAKey
+
+	a.Node = node
+	if a.nodePublicKey, err = crypto.NewPublicKeyFromPEM(node.GetPublicKey()); err != nil {
+		return err
+	}
+
+	// client used for authentication
+	if a.restAuthClient, err = node.RestApiClient(a.ctx); err != nil {
+		return err
+	}
+	// client used for api invocation requests
+	if a.RestApiClient, err = node.RestApiClient(a.ctx); err != nil {
+		return err
+	}
+	a.RestApiClient = a.RestApiClient.WithAuthCrypt(a)
+	
+	return nil
+}
+
 func (a *ApiClient) IsRunning() bool {
 	return a.Node.GetStatus() == "running"
 }
 
 func (a *ApiClient) Start() error {
-	a.authExecTimer = utils.NewExecTimer(a.ctx, a.authCallback, false)
+	a.authExecTimer = utils.NewExecTimer(a.ctx, a.AuthCallback, false)
 	return a.authExecTimer.Start(0)
 }
 
@@ -148,7 +197,7 @@ func (a *ApiClient) Stop() {
 	}
 }
 
-func (a *ApiClient) authCallback() (time.Duration, error) {
+func (a *ApiClient) AuthCallback() (time.Duration, error) {
 
 	var (
 		err error
@@ -157,7 +206,7 @@ func (a *ApiClient) authCallback() (time.Duration, error) {
 	)
 
 	if isAuthenticated, err = a.Authenticate(); err != nil {
-		logger.DebugMessage(
+		logger.ErrorMessage(
 			"ApiClient.authCallback(): Authentication failed with err: %s", 
 			err.Error())
 	}
@@ -191,116 +240,95 @@ func (a *ApiClient) Authenticate() (bool, error) {
 	defer a.keyRefreshMutex.Unlock()
 
 	a.isAuthenticated = false
-	if a.crypt == nil || time.Now().UnixNano() >= a.keyTimeoutAt {
 
-		if ecdhKey, err = crypto.NewECDHKey(); err != nil {
-			return false, err
-		}
-		if ecdhKeyPublicKey, err = ecdhKey.PublicKey(); err != nil {
-			return false, err
-		}
-		authReqKey := &AuthReqKey{
-			RefID: a.refID,
-			ECDHKey: ecdhKeyPublicKey,
-			Nonce: time.Now().UnixMilli(),
-		}
-		if authReqKeyJSON, err = json.Marshal(authReqKey); err != nil {
-			return false, err
-		}
-		logger.DebugMessage(
-			"ApiClient.Authenticate(): created auth request key with nonce '%d': %# v", 
-			authReqKey.Nonce, authReqKey)
-	
-		if authReqKeyEncrypted, err = a.nodePublicKey.EncryptBase64(authReqKeyJSON); err != nil {
-			return false, err
-		}
-		authRequest := &AuthRequest{
-			AuthReqIDKey: a.clientIDKey,
-			AuthReqKey: authReqKeyEncrypted,
-		}
-	
-		request := &rest.Request{
-			Path: a.authPath,
-			Body: authRequest,
-		}
-		response := &rest.Response{
-			Body: &authResponse,
-			Error: &errorResponse,
-		}
-		if err = a.restAuthClient.NewRequest(request).DoPost(response); err != nil {
-			logger.ErrorMessage(
-				"ApiClient.Authenticate(): HTTP error: %s", 
-				err.Error())
-	
-			if len(errorResponse.ErrorMessage) > 0 {
-				logger.ErrorMessage(
-					"ApiClient.Authenticate(): Error message body: Error Code: %d; Error Message: %s", 
-					errorResponse.ErrorCode, errorResponse.ErrorMessage)
-		
-				// todo: return a custom error type 
-				// with parsed error object
-				return false, fmt.Errorf(errorResponse.ErrorMessage)	
-			} else {
-				return false, err
-			}
-		}
-	
-		if authRespKeyJSON, err = a.clientRSAKey.DecryptBase64(authResponse.AuthRespKey); err != nil {
-			return false, err
-		}
-		authRespKey := &AuthRespKey{}
-		if err = json.Unmarshal(authRespKeyJSON, authRespKey); err != nil {
-			return false, err
-		}
-		logger.DebugMessage(
-			"ApiClient.Authenticate(): received auth response key with nonce '%d': %# v", 
-			authReqKey.Nonce, authRespKey)
-	
-		if authRespKey.RefName != a.refName || 
-			authRespKey.Nonce != authReqKey.Nonce {
-			
-			return false, fmt.Errorf("invalid auth response")
-		}	
-	
-		if encryptionKey, err = ecdhKey.SharedSecret(authRespKey.NodeECDHKey); err != nil {
-			return false, err
-		}
-		if a.crypt, err = crypto.NewCrypt(encryptionKey); err != nil {
-			return false, err
-		}
-		a.keyTimeoutAt = authRespKey.TimeoutAt
-		a.AuthIDKey = authResponse.AuthRespIDKey
+	if ecdhKey, err = crypto.NewECDHKey(); err != nil {
+		return false, err
 	}
+	if ecdhKeyPublicKey, err = ecdhKey.PublicKey(); err != nil {
+		return false, err
+	}
+	authReqKey := &AuthReqKey{
+		RefID: a.refID,
+		ECDHKey: ecdhKeyPublicKey,
+		Nonce: time.Now().UnixMilli(),
+	}
+	if authReqKeyJSON, err = json.Marshal(authReqKey); err != nil {
+		return false, err
+	}
+	logger.DebugMessage(
+		"ApiClient.Authenticate(): created auth request key with nonce '%d': %# v", 
+		authReqKey.Nonce, authReqKey)
+
+	if authReqKeyEncrypted, err = a.nodePublicKey.EncryptBase64(authReqKeyJSON); err != nil {
+		return false, err
+	}
+	authRequest := &AuthRequest{
+		AuthReqIDKey: a.clientIDKey,
+		AuthReqKey: authReqKeyEncrypted,
+	}
+
+	request := &rest.Request{
+		Path: a.authPath,
+		Body: authRequest,
+	}
+	response := &rest.Response{
+		Body: &authResponse,
+		Error: &errorResponse,
+	}
+	if err = a.restAuthClient.NewRequest(request).DoPost(response); err != nil {
+		logger.ErrorMessage(
+			"ApiClient.Authenticate(): HTTP error: %s", 
+			err.Error())
+
+		if len(errorResponse.ErrorMessage) > 0 {
+			logger.ErrorMessage(
+				"ApiClient.Authenticate(): Error message body: Error Code: %d; Error Message: %s", 
+				errorResponse.ErrorCode, errorResponse.ErrorMessage)
+	
+			// todo: return a custom error type 
+			// with parsed error object
+			return false, fmt.Errorf(errorResponse.ErrorMessage)	
+		} else {
+			return false, err
+		}
+	}
+
+	if authRespKeyJSON, err = a.clientRSAKey.DecryptBase64(authResponse.AuthRespKey); err != nil {
+		return false, err
+	}
+	authRespKey := &AuthRespKey{}
+	if err = json.Unmarshal(authRespKeyJSON, authRespKey); err != nil {
+		return false, err
+	}
+	logger.DebugMessage(
+		"ApiClient.Authenticate(): received auth response key with nonce '%d': %# v", 
+		authReqKey.Nonce, authRespKey)
+
+	if authRespKey.RefName != a.refName || 
+		authRespKey.Nonce != authReqKey.Nonce {
+		
+		return false, fmt.Errorf("invalid auth response")
+	}	
+
+	if encryptionKey, err = ecdhKey.SharedSecret(authRespKey.NodeECDHKey); err != nil {
+		return false, err
+	}
+	if a.crypt, err = crypto.NewCrypt(encryptionKey); err != nil {
+		return false, err
+	}
+	a.keyTimeoutAt = authRespKey.TimeoutAt
+	a.AuthIDKey = authResponse.AuthRespIDKey
+
 	a.isAuthenticated = true
 	return true, nil
 }
 
-func (a *ApiClient) SetAuthorized(req *http.Request) error {
+func (a *ApiClient) Reset() {
 
-	var (
-		err error
-
-		authToken         rest.AuthToken
-		encryptedReqToken string
-	)
+	a.keyRefreshMutex.Lock()
+	defer a.keyRefreshMutex.Unlock()
 	
-	if a.IsAuthenticated() {
-		req.Header.Set("X-Auth-Key", a.AuthIDKey)
-		if authToken, err = rest.NewRequestAuthToken(a); err != nil {
-			return err
-		}
-		if err = authToken.SignTransportData([]string{"url", "X-Auth-Key"}, req); err != nil {
-			return err
-		}
-		if encryptedReqToken, err = authToken.GetEncryptedToken(); err != nil {
-			return err
-		}
-		req.Header.Set("X-Auth-Token", encryptedReqToken)
-
-	} else {
-		return fmt.Errorf("client not authenticated with mycs space node")
-	}
-	return nil
+	a.isAuthenticated = false
 }
 
 //

@@ -33,6 +33,9 @@ type ApiClient struct {
 	keyTimeoutAt  int64
 	crypt         *crypto.Crypt
 
+	// mutex for api intialization
+	initMutex sync.Mutex
+
 	// client for authentication requests
 	restAuthClient  *rest.RestApiClient
 	keyRefreshMutex sync.Mutex
@@ -157,6 +160,9 @@ func (a *ApiClient) Initialize(
 		err error
 	)
 
+	a.initMutex.Lock()
+	defer a.initMutex.Unlock()
+
 	a.clientIDKey = clientIDKey
 	a.clientRSAKey = clientRSAKey
 
@@ -178,7 +184,17 @@ func (a *ApiClient) Initialize(
 	return nil
 }
 
+func (a *ApiClient) GetNode() userspace.SpaceNode {
+	a.initMutex.Lock()
+	defer a.initMutex.Unlock()
+
+	return a.Node
+}
+
 func (a *ApiClient) IsRunning() bool {
+	a.initMutex.Lock()
+	defer a.initMutex.Unlock()
+
 	return a.Node.GetStatus() == "running"
 }
 

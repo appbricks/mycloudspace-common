@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,7 +21,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun"
-	"inet.af/netaddr"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnserver"
@@ -215,11 +215,11 @@ func (tsd *TailscaleDaemon) run() error {
 	ns.ProcessSubnets = useNetstack || wrapNetstack
 
 	if useNetstack {
-		dialer.UseNetstackForIP = func(ip netaddr.IP) bool {
+		dialer.UseNetstackForIP = func(ip netip.Addr) bool {
 			_, ok := engine.PeerForIP(ip)
 			return ok
 		}
-		dialer.NetstackDialTCP = func(ctx context.Context, dst netaddr.IPPort) (net.Conn, error) {
+		dialer.NetstackDialTCP = func(ctx context.Context, dst netip.AddrPort) (net.Conn, error) {
 			return ns.DialContextTCP(ctx, dst)
 		}
 	}

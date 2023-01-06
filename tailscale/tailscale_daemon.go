@@ -21,9 +21,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun"
+	"tailscale.com/client/tailscale"
+	"tailscale.com/cmd/tailscale/cli"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnserver"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/store"
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
@@ -42,6 +45,7 @@ import (
 	"tailscale.com/wgengine/router"
 
 	cb_logger "github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/utils"
 )
 
 type TailscaleDaemon struct {
@@ -61,16 +65,25 @@ type TailscaleDaemon struct {
 	devName string
 	// wireguard control service
 	wgDevice *device.Device
-	
-	// tailscale services cancel func
+
+	// tailscale services context
+	ctx    context.Context
 	cancel context.CancelFunc
 
+	// timer ping mesh nodes 
+	// to ensure connectivitity
+	nodeCheckTimer *utils.ExecTimer
+	
 	// released when ipn server exits
 	exit *sync.WaitGroup
 
 	// used for mutually exclusive access to internals
 	mx sync.Mutex
 }
+
+var tslocalClient tailscale.LocalClient
+
+const nodeCheckTimeout = 5000 // milliseconds
 
 func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 
@@ -100,7 +113,7 @@ func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 	// or re-routed, etc.
 	logpolicy.MyCSLogOut = logOut
 
-	return &TailscaleDaemon{
+	tsd := &TailscaleDaemon{
 		// tunnel interface name
 		tunname: defaultTunName(),
 		// UDP port to listen on for WireGuard and 
@@ -116,6 +129,11 @@ func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 
 		exit: &sync.WaitGroup{},
 	}
+
+	tsd.ctx, tsd.cancel = context.WithCancel(context.Background())
+	tsd.nodeCheckTimer = utils.NewExecTimer(tsd.ctx, tsd.nodeCheck, false)
+
+	return tsd
 }
 
 func (tsd *TailscaleDaemon) TunnelDeviceName() string {
@@ -123,10 +141,28 @@ func (tsd *TailscaleDaemon) TunnelDeviceName() string {
 }
 
 func (tsd *TailscaleDaemon) Start() error {
+	
+	// start node check timer
+	if err := tsd.nodeCheckTimer.Start(nodeCheckTimeout); err != nil {
+		cb_logger.ErrorMessage(
+			"TailscaleDaemon.Start(): Failed to start node check timer: %s", 
+			err.Error(),
+		)
+		return err
+	}
+
 	return tsd.run()
 }
 
 func (tsd *TailscaleDaemon) Stop() {
+
+	// stopnode check time
+	if err := tsd.nodeCheckTimer.Stop(); err != nil {
+		cb_logger.ErrorMessage(
+			"TailscaleDaemon.Stop(): Node check timer stopped with err: %s", 
+			err.Error())	
+	}	
+
 	tsd.cancel()
 	cb_logger.TraceMessage("TailscaleDaemon.Stop(): Waiting for tailscale daemon services to stop")
 	tsd.exit.Wait()
@@ -135,6 +171,50 @@ func (tsd *TailscaleDaemon) Stop() {
 func (tsd *TailscaleDaemon) Cleanup() {
 	dns.Cleanup(log.Printf, tsd.tunname)
 	router.Cleanup(log.Printf, tsd.tunname)
+}
+
+func (tsd *TailscaleDaemon) nodeCheck() (time.Duration, error) {
+
+	var (
+		err error
+
+		status *ipnstate.Status
+	)
+
+	if status, err = tslocalClient.Status(tsd.ctx); err != nil {
+		cb_logger.ErrorMessage(
+			"TailscaleDaemon.nodeCheck(): Error retrieving tailscale status: %s", 
+			err.Error())		
+
+	} else {
+		for _, ps := range status.Peer {
+
+			peerStatus := ps
+			go func() {
+
+				var (
+					err error
+
+					resolvedIPs []net.IP
+				)
+
+				if resolvedIPs, err = net.LookupIP(peerStatus.DNSName); err != nil {
+					cb_logger.TraceMessage(
+						"TailscaleDaemon.nodeCheck(): Cannot resolve IP for node '%s'.", 
+						peerStatus.DNSName,
+					)
+				}
+				if err := cli.RunPingOnce(tsd.ctx, resolvedIPs[0].String(), 1); err != nil {
+					cb_logger.TraceMessage(
+						"TailscaleDaemon.nodeCheck(): Cannot reach node '%s/%s', got error: %s", 
+						peerStatus.DNSName, resolvedIPs[0].String(), err.Error(),
+					)
+				}	
+			}()
+		}
+	}
+
+	return nodeCheckTimeout, nil
 }
 
 // copied from tailscale/cmd/tailscaled
@@ -164,7 +244,6 @@ func (tsd *TailscaleDaemon) run() error {
 	
 	var (
 		err error
-		ctx context.Context
 
 		logf logger.Logf
 	)
@@ -179,7 +258,7 @@ func (tsd *TailscaleDaemon) run() error {
 	pol.SetVerbosityLevel(tsd.verbose)
 	defer func() {
 		// Finish uploading logs after closing everything else.
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(tsd.ctx, time.Second)
 		defer cancel()
 		_ = pol.Shutdown(ctx)
 	}()
@@ -246,11 +325,9 @@ func (tsd *TailscaleDaemon) run() error {
 		return fmt.Errorf("safesocket.Listen: %v", err)
 	}
 
-	ctx, tsd.cancel = context.WithCancel(context.Background())
-
 	tsd.exit.Add(1)
 	go func() {
-		err = srv.Run(ctx, ln)
+		err = srv.Run(tsd.ctx, ln)
 		// Cancelation is not an error: it is the only way to stop ipnserver.
 		if err != nil && err != context.Canceled {
 			cb_logger.ErrorMessage("TailscaleDaemon.run(): Failed to start IPN server: %v", err)

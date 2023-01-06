@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -173,7 +173,7 @@ func (c *wireguardConfig) Save(path string) (string, error) {
 	)
 	downloadFilePath := filepath.Join(path, c.configFileName)
 	
-	if err = ioutil.WriteFile(downloadFilePath, c.configData, 0644); err != nil {
+	if err = os.WriteFile(downloadFilePath, c.configData, 0644); err != nil {
 		return "", err
 	}
 	if qrCode, err = qrcode.New(string(c.configData), qrcode.Low); err != nil {

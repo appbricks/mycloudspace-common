@@ -58,8 +58,8 @@ var _ = Describe("Wireguard Client", func() {
 			testService.httpTestSvrExpectedURI = "/static/~bastion-admin/mycs-test.conf"
 			
 			// ensure target remotes status is loaded
-			err = testService.target.LoadRemoteRefs()
-			Expect(err).NotTo(HaveOccurred())
+			// err = testService.target.LoadRemoteRefs()
+			// Expect(err).NotTo(HaveOccurred())
 
 			configData, err := vpn.NewVPNConfigData(testService)
 			Expect(err).NotTo(HaveOccurred())

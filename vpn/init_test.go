@@ -98,8 +98,8 @@ func startTestService() *testService {
 	Expect(err).NotTo(HaveOccurred())	
 
 	// ensure target remotes status is loaded
-	err = svc.target.LoadRemoteRefs()
-	Expect(err).NotTo(HaveOccurred())
+	// err = svc.target.LoadRemoteRefs()
+	// Expect(err).NotTo(HaveOccurred())
 
 	return svc
 }

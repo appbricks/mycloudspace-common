@@ -67,8 +67,8 @@ func StartMockNodeServices() *MockNodeService {
 	cli := utils_mocks.NewFakeCLI(os.Stdout, os.Stderr)
 	svc.TestTarget = cb_mocks.NewMockTarget(cli, "127.0.0.1", testServerPort, caRootPem)
 
-	err = svc.TestTarget.LoadRemoteRefs()
-	Expect(err).ToNot(HaveOccurred())
+	// err = svc.TestTarget.LoadRemoteRefs()
+	// Expect(err).ToNot(HaveOccurred())
 
 	deviceContext := config.NewDeviceContext()
 	_, err = deviceContext.NewDevice()

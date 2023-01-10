@@ -22,7 +22,6 @@ import (
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun"
 	"tailscale.com/client/tailscale"
-	"tailscale.com/cmd/tailscale/cli"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnserver"
@@ -33,6 +32,7 @@ import (
 	"tailscale.com/net/dns"
 	"tailscale.com/net/netns"
 	"tailscale.com/net/tsdial"
+	"tailscale.com/tailcfg"
 
 	"tailscale.com/net/tstun"
 	"tailscale.com/paths"
@@ -189,28 +189,67 @@ func (tsd *TailscaleDaemon) nodeCheck() (time.Duration, error) {
 	} else {
 		for _, ps := range status.Peer {
 
-			peerStatus := ps
-			go func() {
-
-				var (
-					err error
-
-					resolvedIPs []net.IP
-				)
-
-				if resolvedIPs, err = net.LookupIP(peerStatus.DNSName); err != nil {
-					cb_logger.TraceMessage(
-						"TailscaleDaemon.nodeCheck(): Cannot resolve IP for node '%s'.", 
-						peerStatus.DNSName,
+			if ps.Online {
+				peerStatus := ps
+				go func() {
+	
+					var (
+						err error
+						ok  bool
+	
+						resolvedIPs []net.IP
+						ip          netip.Addr
+	
+						pingResult *ipnstate.PingResult
 					)
-				}
-				if err := cli.RunPingOnce(tsd.ctx, resolvedIPs[0].String(), 1); err != nil {
+	
+					if resolvedIPs, err = net.LookupIP(peerStatus.DNSName); err != nil || len(resolvedIPs) == 0 {
+						cb_logger.ErrorMessage(
+							"TailscaleDaemon.nodeCheck(): Cannot resolve IP for node '%s'.", 
+							peerStatus.DNSName,
+						)
+						return
+					}
+					if ip, ok = netip.AddrFromSlice(resolvedIPs[0]); !ok {
+						cb_logger.ErrorMessage(
+							"TailscaleDaemon.nodeCheck(): Invalid IP '%s' for for node '%s': %s", 
+							resolvedIPs[0].String(), peerStatus.DNSName, err.Error(),
+						)
+						return
+					}
+	
+					ctx, cancel := context.WithTimeout(tsd.ctx, time.Second)
+					defer cancel()
+
 					cb_logger.TraceMessage(
-						"TailscaleDaemon.nodeCheck(): Cannot reach node '%s/%s', got error: %s", 
-						peerStatus.DNSName, resolvedIPs[0].String(), err.Error(),
+						"TailscaleDaemon.nodeCheck(): Pinging '%s/%s'.", 
+						peerStatus.DNSName, ip.String(), 
 					)
-				}	
-			}()
+					for {
+						if pingResult, err = tslocalClient.Ping(ctx, ip, tailcfg.PingDisco); 
+							err != nil && !errors.Is(err, context.DeadlineExceeded) {
+							
+							cb_logger.DebugMessage(
+								"TailscaleDaemon.nodeCheck(): Cannot reach node '%s/%s', got error: %s", 
+								peerStatus.DNSName, resolvedIPs[0].String(), err.Error(),
+							)	
+							continue
+						}
+						break
+					}
+					if errors.Is(err, context.DeadlineExceeded) {
+						cb_logger.TraceMessage(
+							"TailscaleDaemon.nodeCheck(): Timed out pinging '%s/%s.", 
+							peerStatus.DNSName, ip.String(),
+						)	
+					} else if err == nil {
+						cb_logger.TraceMessage(
+							"TailscaleDaemon.nodeCheck(): Pong from '%s/%s' at endpoint %s.", 
+							pingResult.NodeName, pingResult.IP, pingResult.Endpoint,
+						)	
+					}
+				}()
+			}
 		}
 	}
 

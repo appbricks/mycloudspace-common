@@ -299,19 +299,19 @@ func (dp *deviceParser) parseInt64(s string) int64 {
 }
 
 // parseAddr parses a UDP address from a string.
-func (dp *deviceParser) parseAddr(s string) *net.UDPAddr {
-	if dp.err != nil {
-		return nil
-	}
+// func (dp *deviceParser) parseAddr(s string) *net.UDPAddr {
+// 	if dp.err != nil {
+// 		return nil
+// 	}
 
-	addr, err := net.ResolveUDPAddr("udp", s)
-	if err != nil {
-		dp.err = err
-		return nil
-	}
+// 	addr, err := net.ResolveUDPAddr("udp", s)
+// 	if err != nil {
+// 		dp.err = err
+// 		return nil
+// 	}
 
-	return addr
-}
+// 	return addr
+// }
 
 // parseInt parses an address CIDR from a string.
 func (dp *deviceParser) parseCIDR(s string) *net.IPNet {

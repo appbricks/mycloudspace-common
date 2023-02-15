@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,18 +19,19 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
 	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun"
-	"tailscale.com/client/tailscale"
+	"tailscale.com/control/controlclient"
 	"tailscale.com/envknob"
-	"tailscale.com/ipn"
+	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/ipnserver"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/store"
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
 	"tailscale.com/net/dns"
+	"tailscale.com/net/dnsfallback"
 	"tailscale.com/net/netns"
 	"tailscale.com/net/tsdial"
+	"tailscale.com/smallzstd"
 	"tailscale.com/tailcfg"
 
 	"tailscale.com/net/tstun"
@@ -65,6 +65,8 @@ type TailscaleDaemon struct {
 	devName string
 	// wireguard control service
 	wgDevice *device.Device
+	// tailscale local backend
+	LocalBackend *ipnlocal.LocalBackend
 
 	// tailscale services context
 	ctx    context.Context
@@ -81,9 +83,7 @@ type TailscaleDaemon struct {
 	mx sync.Mutex
 }
 
-var tslocalClient tailscale.LocalClient
-
-const nodeCheckTimeout = 5000 // milliseconds
+const nodeCheckTimeout = 5000 // 5 seconds
 
 func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 
@@ -96,6 +96,11 @@ func NewTailscaleDaemon(statePath string, logOut io.Writer) *TailscaleDaemon {
 	// remove stale config socket if found (*nix systems only)
 	if socketPath = paths.DefaultTailscaledSocket(); len(socketPath) > 0 {
 		os.Remove(socketPath)
+	}
+	// remove default tailscale state path (if different from 
+	// statepath it will still be used for log output)
+	if defaultStatePath := paths.DefaultTailscaledStateFile(); statePath != defaultStatePath {
+		os.RemoveAll(filepath.Dir(defaultStatePath))	
 	}
 
 	switch logrus.GetLevel() {
@@ -175,81 +180,68 @@ func (tsd *TailscaleDaemon) Cleanup() {
 
 func (tsd *TailscaleDaemon) nodeCheck() (time.Duration, error) {
 
-	var (
-		err error
+	for _, ps := range tsd.LocalBackend.Status().Peer {
 
-		status *ipnstate.Status
-	)
+		if ps.Online {
+			peerStatus := ps
+			go func() {
 
-	if status, err = tslocalClient.Status(tsd.ctx); err != nil {
-		cb_logger.ErrorMessage(
-			"TailscaleDaemon.nodeCheck(): Error retrieving tailscale status: %s", 
-			err.Error())		
+				var (
+					err error
+					ok  bool
 
-	} else {
-		for _, ps := range status.Peer {
+					resolvedIPs []net.IP
+					ip          netip.Addr
 
-			if ps.Online {
-				peerStatus := ps
-				go func() {
-	
-					var (
-						err error
-						ok  bool
-	
-						resolvedIPs []net.IP
-						ip          netip.Addr
-	
-						pingResult *ipnstate.PingResult
+					pingResult *ipnstate.PingResult
+				)
+
+				if resolvedIPs, err = net.LookupIP(peerStatus.DNSName); err != nil || len(resolvedIPs) == 0 {
+					cb_logger.ErrorMessage(
+						"TailscaleDaemon.nodeCheck(): Cannot resolve IP for node '%s'.", 
+						peerStatus.DNSName,
 					)
-	
-					if resolvedIPs, err = net.LookupIP(peerStatus.DNSName); err != nil || len(resolvedIPs) == 0 {
-						cb_logger.ErrorMessage(
-							"TailscaleDaemon.nodeCheck(): Cannot resolve IP for node '%s'.", 
-							peerStatus.DNSName,
-						)
-						return
-					}
-					if ip, ok = netip.AddrFromSlice(resolvedIPs[0]); !ok {
-						cb_logger.ErrorMessage(
-							"TailscaleDaemon.nodeCheck(): Invalid IP '%s' for for node '%s': %s", 
-							resolvedIPs[0].String(), peerStatus.DNSName, err.Error(),
-						)
-						return
-					}
-	
-					ctx, cancel := context.WithTimeout(tsd.ctx, time.Second)
-					defer cancel()
+					return
+				}
+				if ip, ok = netip.AddrFromSlice(resolvedIPs[0]); !ok {
+					cb_logger.ErrorMessage(
+						"TailscaleDaemon.nodeCheck(): Invalid IP '%s' for for node '%s': %s", 
+						resolvedIPs[0].String(), peerStatus.DNSName, err.Error(),
+					)
+					return
+				}
 
+				ctx, cancel := context.WithTimeout(tsd.ctx, time.Second)
+				defer cancel()
+
+				cb_logger.TraceMessage(
+					"TailscaleDaemon.nodeCheck(): Pinging '%s/%s'.", 
+					peerStatus.DNSName, ip.String(), 
+				)
+				for {
+					if pingResult, err = tsd.LocalBackend.Ping(ctx, ip, tailcfg.PingDisco); 
+						err != nil && !errors.Is(err, context.DeadlineExceeded) {
+						
+						cb_logger.DebugMessage(
+							"TailscaleDaemon.nodeCheck(): Cannot reach node '%s/%s', got error: %s", 
+							peerStatus.DNSName, resolvedIPs[0].String(), err.Error(),
+						)	
+						continue
+					}
+					break
+				}
+				if errors.Is(err, context.DeadlineExceeded) {
 					cb_logger.TraceMessage(
-						"TailscaleDaemon.nodeCheck(): Pinging '%s/%s'.", 
-						peerStatus.DNSName, ip.String(), 
-					)
-					for {
-						if pingResult, err = tslocalClient.Ping(ctx, ip, tailcfg.PingDisco); 
-							err != nil && !errors.Is(err, context.DeadlineExceeded) {
-							
-							cb_logger.DebugMessage(
-								"TailscaleDaemon.nodeCheck(): Cannot reach node '%s/%s', got error: %s", 
-								peerStatus.DNSName, resolvedIPs[0].String(), err.Error(),
-							)	
-							continue
-						}
-						break
-					}
-					if errors.Is(err, context.DeadlineExceeded) {
-						cb_logger.TraceMessage(
-							"TailscaleDaemon.nodeCheck(): Timed out pinging '%s/%s.", 
-							peerStatus.DNSName, ip.String(),
-						)	
-					} else if err == nil {
-						cb_logger.TraceMessage(
-							"TailscaleDaemon.nodeCheck(): Pong from '%s/%s' at endpoint %s.", 
-							pingResult.NodeName, pingResult.IP, pingResult.Endpoint,
-						)	
-					}
-				}()
-			}
+						"TailscaleDaemon.nodeCheck(): Timed out pinging '%s/%s.", 
+						peerStatus.DNSName, ip.String(),
+					)	
+				} else if err == nil {
+					cb_logger.TraceMessage(
+						"TailscaleDaemon.nodeCheck(): Pong from '%s/%s' at endpoint %s.", 
+						pingResult.NodeName, pingResult.IP, pingResult.Endpoint,
+					)	
+				}
+			}()
 		}
 	}
 
@@ -314,10 +306,38 @@ func (tsd *TailscaleDaemon) run() error {
 	}
 	pol.Logtail.SetLinkMonitor(linkMon)
 
-	// set up tailscale daemon engine
+	logid := pol.PublicID.String()
+
+	//
+	// start ipn server
+	//
+
+	ln, _, err := safesocket.Listen(tsd.socketPath, safesocket.WindowsLocalPort)
+	if err != nil {
+		return fmt.Errorf("safesocket.Listen: %v", err)
+	}
+	srv := ipnserver.New(logf, logid)
+
+	tsd.exit.Add(1)
+	go func() {
+		err = srv.Run(tsd.ctx, ln)
+		// Cancelation is not an error: it is the only way to stop ipnserver.
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				cb_logger.ErrorMessage("TailscaleDaemon.run(): Failed to start IPN server: %v", err)
+			}
+		}
+	
+		cb_logger.TraceMessage("TailscaleDaemon.run(): Tailscale daemon services stopped")
+		tsd.exit.Done()
+	}()
+
+	//
+	// set up tailscale local backend
+	//
 
 	dialer := new(tsdial.Dialer) // mutated below (before used)
-	engine, useNetstack, err := tsd.createEngine(logf, linkMon, dialer)
+	engine, onlyNetstack, err := tsd.createEngine(logf, linkMon, dialer)
 	if err != nil {
 		return fmt.Errorf("createEngine: %w", err)
 	}
@@ -325,85 +345,74 @@ func (tsd *TailscaleDaemon) run() error {
 		panic("internal error: exit node resolver not wired up")
 	}
 
-	ns, err := newNetstack(logf, dialer, engine)
+	netStack, err := newNetstack(logf, dialer, engine)
 	if err != nil {
 		return fmt.Errorf("newNetstack: %w", err)
 	}
-	ns.ProcessLocalIPs = useNetstack
-	ns.ProcessSubnets = useNetstack || wrapNetstack
+	netStack.ProcessLocalIPs = onlyNetstack
+	netStack.ProcessSubnets = onlyNetstack || handleSubnetsInNetstack()
 
-	if useNetstack {
+	if onlyNetstack {
 		dialer.UseNetstackForIP = func(ip netip.Addr) bool {
 			_, ok := engine.PeerForIP(ip)
 			return ok
 		}
 		dialer.NetstackDialTCP = func(ctx context.Context, dst netip.AddrPort) (net.Conn, error) {
-			return ns.DialContextTCP(ctx, dst)
+			return netStack.DialContextTCP(ctx, dst)
 		}
 	}
 
 	engine = wgengine.NewWatchdog(engine)
-	opts := tsd.ipnServerOpts()
+	varRoot, loginFlags := tsd.ipnServerOpts()
 
-	// store, err := ipnserver.StateStore(filepath.Join(tsd.statePath, "tailscaled.state"), logf)
-	store, err := store.New(logf, filepath.Join(tsd.statePath, "tailscaled.state"))
+	store, err := store.New(logf, filepath.Join(varRoot, "tailscaled.state"))
 	if err != nil {
 		return fmt.Errorf("store.New: %w", err)
 	}
-	srv, err := ipnserver.New(logf, pol.PublicID.String(), store, engine, dialer, nil, opts)
+	tsd.LocalBackend, err = ipnlocal.NewLocalBackend(logf, logid, store, "", dialer, engine, loginFlags)
 	if err != nil {
-		return fmt.Errorf("ipnserver.New: %w", err)
+		return fmt.Errorf("ipnlocal.NewLocalBackend: %w", err)
 	}
-	ns.SetLocalBackend(srv.LocalBackend())
-	if err := ns.Start(); err != nil {
+	tsd.LocalBackend.SetVarRoot(varRoot)
+	if root := tsd.LocalBackend.TailscaleVarRoot(); root != "" {
+		dnsfallback.SetCachePath(filepath.Join(root, "derpmap.cached.json"))
+	}
+	tsd.LocalBackend.SetDecompressor(func() (controlclient.Decompressor, error) {
+		return smallzstd.NewDecoder(nil)
+	})
+	netStack.SetLocalBackend(tsd.LocalBackend)
+
+	if err := netStack.Start(); err != nil {
 		cb_logger.ErrorMessage("TailscaleDaemon.run(): Failed to start netstack: %v", err)
+		return err
 	}
 	
-	ln, _, err := safesocket.Listen(tsd.socketPath, safesocket.WindowsLocalPort)
-	if err != nil {
-		return fmt.Errorf("safesocket.Listen: %v", err)
-	}
-
-	tsd.exit.Add(1)
-	go func() {
-		err = srv.Run(tsd.ctx, ln)
-		// Cancelation is not an error: it is the only way to stop ipnserver.
-		if err != nil && err != context.Canceled {
-			cb_logger.ErrorMessage("TailscaleDaemon.run(): Failed to start IPN server: %v", err)
-		}
-	
-		cb_logger.TraceMessage("TailscaleDaemon.run(): Tailscale daemon services stopped")
-		tsd.exit.Done()
-	}()
-
+	srv.SetLocalBackend(tsd.LocalBackend)
 	return nil
 }
 
-func (tsd *TailscaleDaemon) ipnServerOpts() (o ipnserver.Options) {
-	// Allow changing the OS-specific IPN behavior for tests
-	// so we can e.g. test Windows-specific behaviors on Linux.
-	goos := os.Getenv("TS_DEBUG_TAILSCALED_IPN_GOOS")
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-
-	o.VarRoot = tsd.statePath
+func (tsd *TailscaleDaemon) ipnServerOpts() (varRoot string, loginFlags controlclient.LoginFlags ) {
+	goos := envknob.GOOS()
 
 	// If an absolute --state is provided try to derive
 	// a state directory.
-	if o.VarRoot == "" {
+	varRoot = tsd.statePath
+	if varRoot == "" {
 		home, _ := homedir.Dir()
-		o.VarRoot = filepath.Join(home, ".tailscale")
+		varRoot = filepath.Join(home, ".tailscale")
 	}
 
 	switch goos {
-	default:
-		o.SurviveDisconnects = true
-		o.AutostartStateKey = ipn.GlobalDaemonStateKey
+	case "js":
+		// The js/wasm client has no state storage so for now
+		// treat all interactive logins as ephemeral.
+		// TODO(bradfitz): if we start using browser LocalStorage
+		// or something, then rethink this.
+		loginFlags = controlclient.LoginEphemeral
 	case "windows":
 		// Not those.
 	}
-	return o
+	return
 }
 
 func  (tsd *TailscaleDaemon) createEngine(
@@ -444,9 +453,6 @@ func  (tsd *TailscaleDaemon) tryEngine(
 	var (
 		err error
 
-		dev     tun.Device
-		devName string
-
 		engine wgengine.Engine
 		useNetstack bool
 	)
@@ -461,64 +467,47 @@ func  (tsd *TailscaleDaemon) tryEngine(
 	netns.SetEnabled(!useNetstack)
 
 	if !useNetstack {
-		dev, devName, err = tstun.New(logf, name)
-		if err != nil {
+		if conf.Tun, tsd.devName, err = tstun.New(logf, name); err != nil {
 			tstun.Diagnose(logf, name, err)
 			return nil, false, fmt.Errorf("tstun.New(%q): %w", name, err)
 		}
-		conf.Tun = dev
-		
+
 		if strings.HasPrefix(name, "tap:") {
 			conf.IsTAP = true
 
 		} else {
-			r, err := router.New(logf, dev, linkMon)
-			if err != nil {
-				dev.Close()
+			if conf.Router, err = router.New(logf, conf.Tun, linkMon); err != nil {
+				conf.Tun.Close()
 				return nil, false, fmt.Errorf("router.New: %w", err)
 			}
-			d, err := dns.NewOSConfigurator(logf, devName)
-			if err != nil {
+			if conf.DNS, err = dns.NewOSConfigurator(logf, tsd.devName); err != nil {
+				conf.Tun.Close()
+				conf.Router.Close()
 				return nil, false, fmt.Errorf("dns.NewOSConfigurator: %w", err)
 			}
-			conf.DNS = d
-			conf.Router = r
-			if wrapNetstack {
+			if handleSubnetsInNetstack() {
 				conf.Router = netstack.NewSubnetRouterWrapper(conf.Router)
-			}	
+			}
 		}
 	}
-	engine, err = wgengine.NewUserspaceEngine(logf, conf)
-	if err != nil {
-		return nil, useNetstack, err
-	}
 
-	go func() {
-		tsd.mx.Lock()
-		defer tsd.mx.Unlock()
-
-		tsd.devName = devName
-		tsd.wgDevice = wgengine.GetWireguardDevice(engine)
-	}()
+	if engine, err = wgengine.NewUserspaceEngine(logf, conf); err == nil {
+		go func() {
+			tsd.mx.Lock()
+			defer tsd.mx.Unlock()
 	
-	return engine, useNetstack, nil
+			tsd.wgDevice = wgengine.GetWireguardDevice(engine)
+		}()
+	}
+	return engine, useNetstack, err
 }
 
-var wrapNetstack = shouldWrapNetstack()
-
-func shouldWrapNetstack() bool {
-	if e := os.Getenv("TS_DEBUG_WRAP_NETSTACK"); e != "" {
-		v, err := strconv.ParseBool(e)
-		if err != nil {
-			log.Fatalf("invalid TS_DEBUG_WRAP_NETSTACK value: %v", err)
-		}
+func handleSubnetsInNetstack() bool {
+	if v, ok := envknob.LookupBool("TS_DEBUG_NETSTACK_SUBNETS"); ok {
 		return v
 	}
-	if distro.Get() == distro.Synology {
-		return true
-	}
 	switch runtime.GOOS {
-	case "windows", "darwin", "freebsd":
+	case "windows", "darwin", "freebsd", "openbsd":
 		// Enable on Windows and tailscaled-on-macOS (this doesn't
 		// affect the GUI clients), and on FreeBSD.
 		return true

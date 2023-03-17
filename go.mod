@@ -21,6 +21,7 @@ require (
 	github.com/cloudevents/sdk-go/v2 v2.8.0
 	github.com/go-multierror/multierror v1.0.2
 	github.com/google/uuid v1.3.0
+	github.com/huin/goupnp v1.1.0
 	github.com/mevansam/gocloud v0.0.0-00010101000000-000000000000
 	github.com/mevansam/goutils v0.0.0-00010101000000-000000000000
 	github.com/mitchellh/go-homedir v1.1.0
@@ -28,6 +29,7 @@ require (
 	github.com/onsi/gomega v1.20.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	golang.org/x/sys v0.4.0
 	golang.zx2c4.com/wireguard v0.0.0-20220920152132-bb719d3a6e2c
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20220208144051-fde48d68ee68
@@ -157,7 +159,6 @@ require (
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b // indirect
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
 	golang.org/x/term v0.4.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11 // indirect

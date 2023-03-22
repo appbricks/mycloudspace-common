@@ -18,7 +18,7 @@ import (
 	"github.com/go-multierror/multierror"
 	"github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
-	"golang.zx2c4.com/wireguard/device"
+	"github.com/tailscale/wireguard-go/device"
 	"tailscale.com/control/controlclient"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/ipnlocal"
@@ -380,9 +380,8 @@ func (tsd *TailscaleDaemon) run() error {
 	tsd.LocalBackend.SetDecompressor(func() (controlclient.Decompressor, error) {
 		return smallzstd.NewDecoder(nil)
 	})
-	netStack.SetLocalBackend(tsd.LocalBackend)
 
-	if err := netStack.Start(); err != nil {
+	if err := netStack.Start(tsd.LocalBackend); err != nil {
 		cb_logger.ErrorMessage("TailscaleDaemon.run(): Failed to start netstack: %v", err)
 		return err
 	}
@@ -391,7 +390,7 @@ func (tsd *TailscaleDaemon) run() error {
 	return nil
 }
 
-func (tsd *TailscaleDaemon) ipnServerOpts() (varRoot string, loginFlags controlclient.LoginFlags ) {
+func (tsd *TailscaleDaemon) ipnServerOpts() (varRoot string, loginFlags controlclient.LoginFlags) {
 	goos := envknob.GOOS()
 
 	// If an absolute --state is provided try to derive

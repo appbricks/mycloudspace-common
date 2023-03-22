@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/mevansam/goutils/logger"
-	"golang.zx2c4.com/wireguard/device"
+	"github.com/tailscale/wireguard-go/device"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 

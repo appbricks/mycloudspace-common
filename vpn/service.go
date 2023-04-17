@@ -39,7 +39,7 @@ type Config interface {
 	NewClient(monitorService *monitors.MonitorService) (Client, error)
 	Config() string
 
-	Save(path string) (string, error)
+	Save(path, prefix string) (string, error)
 }
 
 type Client interface {

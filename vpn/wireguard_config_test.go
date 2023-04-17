@@ -50,7 +50,7 @@ var _ = Describe("Wireguard Config", func() {
 			Expect(config.Config()).To(Equal(wireguardConfig))
 			Expect(testService.httpTestSvrErr).NotTo(HaveOccurred())		
 			
-			desc, err := config.Save(downloadPath)
+			desc, err := config.Save(downloadPath, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(desc[0:400]).To(MatchRegexp(fmt.Sprintf(wireguardConfigSave, downloadPath)))
 		})

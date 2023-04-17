@@ -164,14 +164,14 @@ func (c *wireguardConfig) Config() string {
 	return string(c.configData)
 }
 
-func (c *wireguardConfig) Save(path string) (string, error) {
+func (c *wireguardConfig) Save(path, prefix string) (string, error) {
 	
 	var (
 		err error
 
 		qrCode *qrcode.QRCode
 	)
-	downloadFilePath := filepath.Join(path, c.configFileName)
+	downloadFilePath := filepath.Join(path, prefix + c.configFileName)
 	
 	if err = os.WriteFile(downloadFilePath, c.configData, 0644); err != nil {
 		return "", err

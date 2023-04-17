@@ -21,6 +21,6 @@ func (c *openvpnConfig) Config() string {
 	return ""
 }
 
-func (c *openvpnConfig) Save(path string) (string, error) {
+func (c *openvpnConfig) Save(path, prefix string) (string, error) {
 	return "", nil
 }

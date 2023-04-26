@@ -46,9 +46,19 @@ type wireguard struct {
 
 func newWireguardClient(cfg *wireguardConfig, monitorService *monitors.MonitorService) (*wireguard, error) {
 
+	var (
+		err error
+
+		nc network.NetworkContext
+	)
+
+	if nc, err = network.NewNetworkContext(); err != nil {
+		return nil, err
+	}
+
 	w := &wireguard{
 		cfg: cfg,
-		nc:  network.NewNetworkContext(),
+		nc:  nc,
 
 		close:        make(chan bool),
 		disconnected: make(chan bool),

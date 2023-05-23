@@ -4,15 +4,11 @@ package vpn
 
 import (
 	"context"
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-
-	"github.com/mitchellh/go-homedir"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/run"
@@ -44,16 +40,10 @@ func init() {
 	var (
 		err error
 
-		nullOut      *os.File
-		outputBuffer bytes.Buffer
+		nullOut *os.File
 	
-		executablePath,
-		wireguardEXEPath string
-
-		where run.CLI
+		executablePath string
 	)
-
-	home, _ := homedir.Dir()
 
 	if nullOut, err = os.Open(os.DevNull); err != nil {
 		logger.ErrorMessage("vpn.init(): Error getting the null file output handle: %s", err.Error())
@@ -65,32 +55,18 @@ func init() {
 		logger.ErrorMessage("vpn.init(): Error unable to determine path of CB CLI: %s", err.Error())
 		return	
 	}
-	wireguardEXEPath = filepath.Join(filepath.Dir(executablePath), "wireguard.exe")
-	if wireguardEXE, err = run.NewCLI(wireguardEXEPath, home, nullOut, nullOut); err != nil {
-
-		// look for wireguard service exe in system path
-		if where, err = run.NewCLI("C:/Windows/System32/where.exe", home, &outputBuffer, &outputBuffer); err != nil {
-			logger.ErrorMessage("vpn.init(): Error creating CLI for \"where\" command: %s", err.Error())
-			return
-		}
-		if err = where.Run([]string{ "wireguard.exe" }); err != nil {		
-			logger.ErrorMessage("vpn.init(): Error running \"where wireguard.exe\" command: %s", err.Error())
-			return
-		}
-		results := utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
-			"wireguardPath": regexp.MustCompile(`^.*\\wireguard.exe$`),
-		})
-		if len(results["wireguardPath"]) > 0 && len(results["wireguardPath"][0]) == 1 {
-			wireguardEXEPath = results["wireguardPath"][0][0]
-			if wireguardEXE, err = run.NewCLI(wireguardEXEPath, home, nullOut, nullOut); err != nil {
-				logger.ErrorMessage("vpn.init(): Error creating CLI for \"%s\" command: %s", wireguardEXEPath, err.Error())
-				return
-			}
-
-		} else {
-			logger.ErrorMessage("vpn.init(): Unable to locate wireguard service executable.")	
-			return
-		}
+	run.AddCliSearchPaths("wireguard.exe", filepath.Dir(executablePath))
+	if drives, err := run.GetLogicalDrives(); err == nil {
+		for _, d := range drives {
+			run.AddCliSearchPaths("wireguard.exe", 
+				filepath.Join(d, "Program Files", "WireGuard"),
+				filepath.Join(d, "WireGuard"),
+			)
+		}	
+	}
+	if wireguardEXE, executablePath, err = run.CreateCLI("wireguard.exe", nullOut, nullOut); err != nil {
+		logger.ErrorMessage("vpn.init(): Error unable to determine path of wireguard EXE: %s", err.Error())
+		return
 	}
 }
 

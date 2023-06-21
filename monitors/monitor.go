@@ -248,15 +248,13 @@ func (m *Monitor) DeleteCounter(counter *Counter) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if m.counters != nil {
-		// ref: https://go.dev/play/p/6D7u9x9UNw2
-		j := len(m.counters) - 1
-		for i := j; i >= 0; i-- {
-			if m.counters[i] == counter {
-				copy(m.counters[i:], m.counters[i+1:])
-				break
-			}
+	// ref: https://go.dev/play/p/6D7u9x9UNw2
+	j := len(m.counters) - 1
+	for i := j; i >= 0; i-- {
+		if m.counters[i] == counter {
+			copy(m.counters[i:], m.counters[i+1:])
+			break
 		}
-		m.counters = m.counters[:j]
 	}
+	m.counters = m.counters[:j]
 }

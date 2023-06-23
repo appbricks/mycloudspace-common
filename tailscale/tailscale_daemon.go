@@ -160,6 +160,8 @@ func (tsd *TailscaleDaemon) Start() error {
 }
 
 func (tsd *TailscaleDaemon) Stop() {
+	tsd.mx.Lock()
+	defer tsd.mx.Unlock()
 
 	// stopnode check time
 	if err := tsd.nodeCheckTimer.Stop(); err != nil {
@@ -179,6 +181,12 @@ func (tsd *TailscaleDaemon) Cleanup() {
 }
 
 func (tsd *TailscaleDaemon) nodeCheck() (time.Duration, error) {
+	tsd.mx.Lock()
+	defer tsd.mx.Unlock()
+
+	if err := tsd.ctx.Err(); err != nil {
+		return nodeCheckTimeout, err
+	}
 
 	for _, ps := range tsd.LocalBackend.Status().Peer {
 

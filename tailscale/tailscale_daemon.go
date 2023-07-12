@@ -180,13 +180,22 @@ func (tsd *TailscaleDaemon) Cleanup() {
 	router.Cleanup(log.Printf, tsd.tunname)
 }
 
-func (tsd *TailscaleDaemon) nodeCheck() (time.Duration, error) {
-	tsd.mx.Lock()
-	defer tsd.mx.Unlock()
-
-	if err := tsd.ctx.Err(); err != nil {
-		return nodeCheckTimeout, err
+func (tsd *TailscaleDaemon) nodeCheck() (to time.Duration, err error) {
+	to = nodeCheckTimeout
+	if err = tsd.ctx.Err(); err != nil {
+		return
 	}
+
+	tsd.mx.Lock()
+	defer func() {
+		tsd.mx.Unlock()
+
+		// handle any panic from underlying tailscale daemon. this can happen if we 
+		// try to access the tailscale engine before it has completed initialization
+		if perr := recover(); perr != nil {
+			cb_logger.ErrorMessage("TailscaleDaemon.nodeCheck(): Underlying tailscale daemon paniced: %v", perr)
+		}
+	}()
 
 	for _, ps := range tsd.LocalBackend.Status().Peer {
 
@@ -253,7 +262,7 @@ func (tsd *TailscaleDaemon) nodeCheck() (time.Duration, error) {
 		}
 	}
 
-	return nodeCheckTimeout, nil
+	return
 }
 
 // copied from tailscale/cmd/tailscaled

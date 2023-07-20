@@ -119,7 +119,7 @@ require (
 	github.com/mdlayher/netlink v1.6.0 // indirect
 	github.com/mdlayher/sdnotify v1.0.0 // indirect
 	github.com/mdlayher/socket v0.2.3 // indirect
-	github.com/mevansam/goforms v0.0.0-00010101000000-000000000000 // indirect
+	github.com/mevansam/goforms v0.0.1 // indirect
 	github.com/minio/highwayhash v1.0.2 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
